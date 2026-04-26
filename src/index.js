@@ -29,3 +29,4 @@ app.use(errorMiddleware)
 app.listen(PORT, () => {
     logger.info(`Server running on port ${PORT}`)
 })
+// trigger restart
