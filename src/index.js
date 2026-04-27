@@ -1,32 +1,62 @@
-require('dotenv').config()
-const express = require('express')
-const cors = require('cors')
-const logger = require('./utils/logger')
-const errorMiddleware = require('./middlewares/error.middleware')
-
-const messageRoutes = require('./routes/messages.routes')
-
-
-const app = express()
-const PORT = process.env.PORT || 5000
-
-// Middlewares — must come before routes
-app.use(cors())
-app.use(express.json())
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const logger = require('./utils/logger');
+const errorMiddleware = require('./middlewares/error.middleware');
+const { globalLimiter } = require('./middlewares/rateLimit.middleware');
 
 // Routes
-app.use('/api/messages', messageRoutes)
+const messageRoutes = require('./routes/messages.routes.js');
 
+const app = express();
+const PORT = process.env.PORT || 5000;
+const VERSION = '1.1.0';
 
-// Test route
+// ─── MIDDLEWARES ─────────────────────────────────────────────────────────────
+
+app.use(cors());
+app.use(express.json());
+
+/**
+ * GLOBAL RATE LIMITING
+ * Comment out the line below during heavy local testing if needed.
+ */
+app.use(globalLimiter);
+
+// ─── ROUTES ──────────────────────────────────────────────────────────────────
+
+app.use('/api/messages', messageRoutes);
+
+// Health Check / Root
 app.get('/', (req, res) => {
-    res.json({ message: 'Travstory Backend is running! 🚀' })
-})
+    res.json({ 
+        status: 'online',
+        message: 'Travstory AI Engine is humming along! 🚀',
+        version: VERSION,
+        timestamp: new Date().toISOString()
+    });
+});
 
-// Error middleware — always at the bottom
-app.use(errorMiddleware)
+// ─── ERROR HANDLING ──────────────────────────────────────────────────────────
 
-app.listen(PORT, () => {
-    logger.info(`Server running on port ${PORT}`)
-})
-// trigger restart
+// 404 Handler
+app.use((req, res) => {
+    res.status(404).json({ error: 'Route not found' });
+});
+
+// Global Error Middleware
+app.use(errorMiddleware);
+
+// ─── START SERVER ────────────────────────────────────────────────────────────
+
+const server = app.listen(PORT, () => {
+    logger.info(`✅ Server v${VERSION} started on port ${PORT}`);
+});
+
+// Handle graceful shutdown
+process.on('SIGTERM', () => {
+    logger.info('SIGTERM received. Shutting down gracefully...');
+    server.close(() => {
+        logger.info('Process terminated.');
+    });
+});
