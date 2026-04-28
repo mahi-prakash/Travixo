@@ -12,6 +12,9 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const VERSION = '1.1.0';
 
+// Trust proxy is required for express-rate-limit on hosting like Render/Heroku
+app.set('trust proxy', 1);
+
 // ─── MIDDLEWARES ─────────────────────────────────────────────────────────────
 
 app.use(cors());
