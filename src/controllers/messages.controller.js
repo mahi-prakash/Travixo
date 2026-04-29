@@ -12,10 +12,12 @@ const sendMessage = async (req, res, next) => {
     // 1. Get the system prompt from config
     const systemPrompt = getTravelPlannerPrompt(destination);
 
-    // 2. Prepare message history for the AI
+    // 2. Prepare message history for the AI (limit to last 5 messages to prevent 413 Payload Too Large)
+    const recentHistory = history.slice(-5);
+    
     const chatMessages = [
       { role: 'system', content: systemPrompt },
-      ...history.map(msg => ({
+      ...recentHistory.map(msg => ({
         role: msg.role === 'assistant' ? 'assistant' : 'user',
         // Omit heavy itinerary data from history to save tokens
         content: (msg.content || "").replace(/\[ITINERARY\][\s\S]*?\[\/ITINERARY\]/gi, ' (Itinerary data omitted) ')

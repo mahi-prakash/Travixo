@@ -58,10 +58,7 @@ const server = app.listen(PORT, () => {
     logger.info(`✅ Server v${VERSION} started on port ${PORT}`);
 });
 
-// Handle graceful shutdown
+// Handle graceful shutdown silently in development
 process.on('SIGTERM', () => {
-    logger.info('SIGTERM received. Shutting down gracefully...');
-    server.close(() => {
-        logger.info('Process terminated.');
-    });
+    server.close();
 });
