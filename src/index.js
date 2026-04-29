@@ -7,6 +7,7 @@ const { globalLimiter } = require('./middlewares/rateLimit.middleware');
 
 // Routes
 const messageRoutes = require('./routes/messages.routes.js');
+const reviewRoutes = require('./routes/reviews.routes.js');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -29,6 +30,7 @@ app.use(globalLimiter);
 // ─── ROUTES ──────────────────────────────────────────────────────────────────
 
 app.use('/api/messages', messageRoutes);
+app.use('/api/reviews', reviewRoutes);
 
 // Health Check / Root
 app.get('/', (req, res) => {
