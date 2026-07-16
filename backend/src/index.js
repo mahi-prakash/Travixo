@@ -25,7 +25,7 @@ app.use(express.json());
  * GLOBAL RATE LIMITING
  * Comment out the line below during heavy local testing if needed.
  */
-app.use(globalLimiter);
+//app.use(globalLimiter);
 
 // ─── ROUTES ──────────────────────────────────────────────────────────────────
 
@@ -34,7 +34,7 @@ app.use('/api/reviews', reviewRoutes);
 
 // Health Check / Root
 app.get('/', (req, res) => {
-    res.json({ 
+    res.json({
         status: 'online',
         message: 'Travstory AI Engine is humming along! 🚀',
         version: VERSION,
