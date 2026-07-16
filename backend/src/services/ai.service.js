@@ -142,15 +142,49 @@ async function callMistral(messages) {
   throw new Error('ALL_MISTRAL_EXHAUSTED');
 }
 
-// ─── Exported Service ────────────────────────────────────────────────────────
+// ─── AI Response Cache ────────────────────────────────────────────────────────
+
+const aiResponseCache = new Map();
+const CACHE_TTL_MS = 1000 * 60 * 60 * 24; // 24 hours
 
 const generateAiResponse = async (messages) => {
+  // 1. Generate a unique cache key based on the prompt content
+  // We stringify the messages array to ensure identical prompts hit the cache
+  const cacheKey = JSON.stringify(messages);
+
+  // 2. Check if the exact prompt was asked recently
+  if (aiResponseCache.has(cacheKey)) {
+    const cachedEntry = aiResponseCache.get(cacheKey);
+    if (Date.now() < cachedEntry.expiry) {
+      logger.info('⚡ Served AI response from IN-MEMORY CACHE! Latency bypassed.');
+      return cachedEntry.data;
+    } else {
+      aiResponseCache.delete(cacheKey); // Clean up expired entry
+    }
+  }
+
+  // 3. If not in cache, call the expensive AI providers
   try {
-    return await callGroq(messages);
+    const response = await callGroq(messages);
+    
+    // 4. Save the successful response to the cache for future users
+    aiResponseCache.set(cacheKey, {
+      data: response,
+      expiry: Date.now() + CACHE_TTL_MS
+    });
+
+    return response;
   } catch (err) {
     if (err.message === 'ALL_GROQ_EXHAUSTED') {
       logger.warn('⚠️ All Groq keys exhausted — falling back to Mistral');
-      return await callMistral(messages);
+      const fallbackResponse = await callMistral(messages);
+      
+      // Save Mistral fallback to cache as well
+      aiResponseCache.set(cacheKey, {
+        data: fallbackResponse,
+        expiry: Date.now() + CACHE_TTL_MS
+      });
+      return fallbackResponse;
     }
     throw err;
   }
