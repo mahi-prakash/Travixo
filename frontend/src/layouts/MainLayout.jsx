@@ -9,7 +9,8 @@ import Dropdown from "../components/common/Dropdown";
 
 const MainLayout = () => {
   const location = useLocation();
-  const isFullWidthPage = location.pathname === "/chat" || location.pathname.startsWith("/planner") || location.pathname === "/profile" || location.pathname === "/bookings" || location.pathname === "/explore";
+  const path = location.pathname.toLowerCase();
+  const isFullWidthPage = path.startsWith("/chat") || path.startsWith("/planner") || path.startsWith("/profile") || path.startsWith("/bookings") || path.startsWith("/explore");
   const { user, logout } = useUser();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const navigate = useNavigate();
@@ -28,7 +29,7 @@ const MainLayout = () => {
   ];
 
   return (
-    <div className="h-screen flex flex-col bg-slate-50 overflow-hidden">
+    <div className="fixed inset-0 flex flex-col bg-slate-50 overflow-hidden">
       {/* HEADER (SINGLE SOURCE OF TRUTH) */}
       <header className="border-b border-slate-100 bg-white">
         <div className="w-full px-8 py-3 flex items-center">
@@ -226,7 +227,7 @@ const MainLayout = () => {
       <main
         className={
           isFullWidthPage
-            ? "flex-1 w-full px-0 pb-0 pt-0 overflow-y-auto no-scrollbar"
+            ? "flex-1 w-full px-0 pb-0 pt-0 flex flex-col overflow-hidden min-h-0"
             : "flex-1 container mx-auto max-w-5xl px-6 pt-6"
         }
       >
