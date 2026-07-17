@@ -101,8 +101,17 @@ export default function Chat() {
   const [editingTitle, setEditingTitle] = useState("");
   const [onboardingData, setOnboardingData] = useState({
     tripName: "",
+    origin: "",
     destination: "",
     days: "",
+    transportBooked: null,
+    arrivalStation: "",
+    arrivalTime: "",
+    returnTransportBooked: null,
+    departureStation: "",
+    departureTime: "",
+    hotelBooked: null,
+    hotelAddress: "",
     budget: "",
     people: "2 People",
     vibe: "Balanced",
@@ -489,6 +498,9 @@ export default function Chat() {
           tripId: tripId,
           content: finalPrompt || text,
           destination: currentTrip?.collected?.destination || realTrips?.find(t => t.id === tripId)?.destination || "Unknown",
+          origin: currentTrip?.collected?.origin || null,
+          arrivalStation: currentTrip?.collected?.arrivalStation || null,
+          hotelAddress: currentTrip?.collected?.hotelAddress || null,
           history: (currentTrip?.messages || []).map(m => ({
             role: m.from === "bot" ? "assistant" : "user",
             content: m.text
@@ -593,11 +605,20 @@ export default function Chat() {
   // ── New trip button → open onboarding modal ────────────────────────────────
   const handleNewChat = () => {
     setShowOnboarding(true);
-    setOnboardingStep(2); // Start at Destination
+    setOnboardingStep(1); // Mode selection
     setOnboardingData({
       tripName: "",
+      origin: "",
       destination: "",
       days: "",
+      transportBooked: null,
+      arrivalStation: "",
+      arrivalTime: "",
+      returnTransportBooked: null,
+      departureStation: "",
+      departureTime: "",
+      hotelBooked: null,
+      hotelAddress: "",
       budget: "Moderate",
       people: "2 People",
       vibe: "Balanced",
@@ -609,7 +630,7 @@ export default function Chat() {
     setShowOnboarding(false);
 
     // 💡 SHADOW COPY: Extract raw values to avoid closure staleness
-    const { destination, days, budget, tripName, people, vibe } = onboardingData;
+    const { destination, days, budget, tripName, people, vibe, origin, arrivalStation, arrivalTime, departureStation, departureTime, hotelAddress, isExploring } = onboardingData;
 
     try {
       const heroImage = await api.unsplash.fetchPhoto(destination || tripName || "Travel");
@@ -630,15 +651,20 @@ export default function Chat() {
       const collected = {
         destination: destination || null,
         days: days || null,
-        budget: budget || null
+        budget: budget || null,
+        origin: origin || null,
+        arrivalStation: arrivalStation || null,
+        hotelAddress: hotelAddress || null
       };
 
       let aiStage = "CHAT";
       let firstQuestion = null;
       let options = null;
 
-      // Logic: If any critical info is missing, the AI takes over from that step
-      if (!collected.destination) {
+      if (isExploring) {
+        aiStage = "CHAT";
+        firstQuestion = `Hey ${userName}! 🌍 Let's explore ${destination}. What would you like to know about it? (Food, culture, best time to visit...)`;
+      } else if (!collected.destination) {
         aiStage = "ASK_DESTINATION";
         firstQuestion = `Hey ${userName}! I've set up your trip. First things first—where are we headed? 🌍`;
         options = ["Beach 🏖️", "Mountains ⛰️", "City 🏙️"];
@@ -675,14 +701,14 @@ export default function Chat() {
       }));
 
       // 🚀 Trigger AI if fully ready
-      if (aiStage === "GENERATING") {
+      if (aiStage === "GENERATING" && !skip) {
         // Handle "Surprise me" for days specifically (max 10)
         let finalDays = days;
         if (days === "Surprise me") {
           finalDays = Math.floor(Math.random() * 8) + 3; // 3 to 10 days
         }
 
-        const prompt = `Plan a ${finalDays} day trip to ${destination} for ${people} with a ${budget} budget (${vibe} vibe). Mention it's for ${userName}. Start with a friendly summary acknowledging these details.`;
+        const prompt = `Plan a ${finalDays} day trip to ${destination} for ${people} with a ${budget} budget (${vibe} vibe). Origin: ${origin || 'Unknown'}. Arrival Station: ${arrivalStation || 'Unknown'} at ${arrivalTime || 'Unknown time'}. Departure Station: ${departureStation || 'Unknown'} at ${departureTime || 'Unknown time'}. Hotel Address: ${hotelAddress || 'Unknown'}. Mention it's for ${userName}. Start with a friendly summary acknowledging these details.`;
         // Small timeout to let the Context update and UI switch
         setTimeout(() => sendMessage(prompt, newTrip.id), 600);
       }
@@ -787,7 +813,7 @@ export default function Chat() {
       transition={{ duration: 0.35, ease: "easeOut" }}
       className="h-full w-full bg-white flex flex-col"
     >
-      <SEO 
+      <SEO
         title="AI Travel Assistant"
         url="/chat"
         description="Chat with our AI travel expert to build persona-driven itineraries, find hidden gems, and plan your perfect trip in seconds."
@@ -839,227 +865,236 @@ export default function Chat() {
 
               <div className="p-8 pt-10 text-center">
                 <AnimatePresence mode="wait">
-                  {/* Step 1 Removed */}
+                  {/* ── STEP 1: Mode Selection ── */}
+                  {onboardingStep === 1 && (
+                    <motion.div key="step1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-5">
+                      <div className="w-12 h-12 bg-sky-50 rounded-2xl flex items-center justify-center mx-auto">
+                        <Sparkles className="text-sky-600 w-6 h-6" />
+                      </div>
+                      <h2 className="text-2xl font-bold text-slate-900">What's the vibe?</h2>
+                      <p className="text-sm text-slate-500">Do you want to plan a specific trip, or just explore a destination?</p>
+                      <div className="flex flex-col gap-3 pt-2">
+                        <button onClick={() => setOnboardingStep(2)} className="w-full py-4 bg-sky-600 text-white rounded-xl font-bold text-base hover:bg-sky-700 transition shadow-lg flex items-center justify-center gap-2">
+                          <Clock size={18} /> I have dates & want to plan
+                        </button>
+                        <button onClick={() => { setOnboardingData({ ...onboardingData, isExploring: true }); setOnboardingStep(2); }} className="w-full py-4 bg-slate-100 text-slate-700 rounded-xl font-bold text-base hover:bg-slate-200 transition flex items-center justify-center gap-2">
+                          <MapPin size={18} /> Just explore a place (Skip)
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
 
-                  {/* ── STEP 2: Destination ── */}
+                  {/* ── STEP 2: The Basics (Origin, Dest, Days) ── */}
                   {onboardingStep === 2 && (
-                    <motion.div
-                      key="step2"
-                      initial={{ opacity: 0, x: 20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0, x: -20 }}
-                      className="space-y-5"
-                    >
-                      <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center mx-auto">
+                    <motion.div key="step2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4">
+                      <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center mx-auto mb-2">
                         <MapPin className="text-emerald-600 w-6 h-6" />
                       </div>
-                      <h2 className="text-2xl font-bold text-slate-900">
-                        Where to?
-                      </h2>
-                      <p className="text-sm text-slate-500">
-                        City, country, or just a vibe.
-                      </p>
-                      <input
-                        autoFocus
-                        value={onboardingData.destination}
-                        onChange={(e) =>
-                          setOnboardingData({
-                            ...onboardingData,
-                            destination: e.target.value,
-                          })
-                        }
-                        placeholder="e.g. Tokyo, Japan"
-                        className="w-full px-5 py-3.5 bg-slate-100/50 border-2 border-transparent focus:border-sky-600 rounded-xl outline-none text-base transition"
-                      />
+                      <h2 className="text-2xl font-bold text-slate-900">The Basics</h2>
 
-                      <div className="flex flex-wrap gap-2 justify-center">
-                        {[
-                          { label: "Beach 🏖️", val: "Beach" },
-                          { label: "Mountains ⛰️", val: "Mountains" },
-                          { label: "City 🏙️", val: "City" }
-                        ].map((chip) => (
-                          <button
-                            key={chip.val}
-                            onClick={() => {
-                              setOnboardingData({ ...onboardingData, destination: chip.val });
-                              setOnboardingStep(3);
-                            }}
-                            className="px-3 py-1.5 rounded-full bg-slate-50 border border-slate-200 text-xs font-bold text-slate-600 hover:border-sky-300 hover:bg-sky-50 transition"
-                          >
-                            {chip.label}
-                          </button>
-                        ))}
+                      <div className="space-y-3 text-left">
+                        <div>
+                          <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Destination</label>
+                          <input autoFocus value={onboardingData.destination} onChange={(e) => setOnboardingData({ ...onboardingData, destination: e.target.value })} placeholder="e.g. Puri, Odisha" className="w-full mt-1 px-4 py-2.5 bg-slate-100/50 border-2 border-transparent focus:border-sky-600 rounded-xl outline-none text-sm transition" />
+                        </div>
+
+                        {!onboardingData.isExploring && (
+                          <>
+                            <div>
+                              <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Starting From (Origin)</label>
+                              <input value={onboardingData.origin} onChange={(e) => setOnboardingData({ ...onboardingData, origin: e.target.value })} placeholder="e.g. Bhubaneswar" className="w-full mt-1 px-4 py-2.5 bg-slate-100/50 border-2 border-transparent focus:border-sky-600 rounded-xl outline-none text-sm transition" />
+                            </div>
+                            <div>
+                              <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Number of Days</label>
+                              <div className="grid grid-cols-4 gap-2 mt-1">
+                                {["3", "5", "7", "Surprise"].map((d) => (
+                                  <button key={d} onClick={() => setOnboardingData({ ...onboardingData, days: d })} className={`py-2 rounded-xl border-2 transition font-bold text-xs ${onboardingData.days === d ? "border-sky-600 bg-sky-50 text-sky-600" : "border-slate-100 hover:border-slate-200 text-slate-600"}`}>
+                                    {d}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </>
+                        )}
                       </div>
-                      <div className="pt-1">
-                        <button
-                          onClick={() => setOnboardingStep(3)}
-                          className="w-full py-3 bg-sky-600 text-white rounded-xl font-bold text-base hover:bg-sky-700 transition disabled:opacity-50"
-                          disabled={!onboardingData.destination}
-                        >
+
+                      <div className="pt-2">
+                        <button onClick={() => onboardingData.isExploring ? setOnboardingStep(5) : setOnboardingStep(3)} disabled={!onboardingData.destination || (!onboardingData.isExploring && (!onboardingData.origin || !onboardingData.days))} className="w-full py-3 bg-sky-600 text-white rounded-xl font-bold text-base hover:bg-sky-700 transition disabled:opacity-50">
                           Next
                         </button>
                       </div>
                     </motion.div>
                   )}
 
-                  {/* ── STEP 3: Days ── */}
+                  {/* ── STEP 3: Transport ── */}
                   {onboardingStep === 3 && (
-                    <motion.div
-                      key="step3"
-                      initial={{ opacity: 0, x: 20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0, x: -20 }}
-                      className="space-y-5"
-                    >
+                    <motion.div key="step3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-5">
                       <div className="w-12 h-12 bg-purple-50 rounded-2xl flex items-center justify-center mx-auto">
-                        <Clock className="text-purple-600 w-6 h-6" />
+                        <Send className="text-purple-600 w-6 h-6" />
                       </div>
-                      <h2 className="text-2xl font-bold text-slate-900">
-                        How many days?
-                      </h2>
-                      <p className="text-sm text-slate-500">
-                        We'll plan it day by day.
-                      </p>
-                      <div className="grid grid-cols-4 gap-3">
-                        {["3", "5", "7", "Surprise me"].map((d) => (
-                          <button
-                            key={d}
-                            onClick={() =>
-                              setOnboardingData({ ...onboardingData, days: d })
-                            }
-                            className={`p-1.5 rounded-xl border-2 transition font-bold text-[10px] ${onboardingData.days === d ? "border-sky-600 bg-sky-50 text-sky-600" : "border-slate-100 hover:border-slate-200 text-slate-600"}`}
-                          >
-                            {d === "Surprise me" ? "" : d}
-                            <div className="text-[10px] mt-0.5">{d === "Surprise me" ? "Surprise" : "Days"}</div>
-                          </button>
-                        ))}
+                      <h2 className="text-2xl font-bold text-slate-900">Travel Logistics</h2>
+                      <p className="text-sm text-slate-500">Have you booked your flight or train to {onboardingData.destination} yet?</p>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <button onClick={() => setOnboardingData({ ...onboardingData, transportBooked: 'yes' })} className={`py-3 rounded-xl border-2 transition font-bold text-sm ${onboardingData.transportBooked === 'yes' ? "border-sky-600 bg-sky-50 text-sky-600" : "border-slate-100 text-slate-600"}`}>Yes, Booked!</button>
+                        <button onClick={() => setOnboardingData({ ...onboardingData, transportBooked: 'no' })} className={`py-3 rounded-xl border-2 transition font-bold text-sm ${onboardingData.transportBooked === 'no' ? "border-sky-600 bg-sky-50 text-sky-600" : "border-slate-100 text-slate-600"}`}>Not Yet</button>
                       </div>
-                      <input
-                        value={onboardingData.days}
-                        onChange={(e) =>
-                          setOnboardingData({
-                            ...onboardingData,
-                            days: e.target.value,
-                          })
-                        }
-                        placeholder="Or type custom days"
-                        className="w-full px-5 py-3 bg-slate-100/50 border-2 border-transparent focus:border-sky-600 rounded-xl outline-none text-sm transition"
-                      />
-                      <div className="pt-1">
-                        <button
-                          onClick={() => setOnboardingStep(4)}
-                          className="w-full py-3 bg-sky-600 text-white rounded-xl font-bold text-base hover:bg-sky-700 transition"
-                        >
-                          Next
-                        </button>
+
+                      {onboardingData.transportBooked === 'yes' && (
+                        <div className="text-left animate-fade-in space-y-3">
+                          <div>
+                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Arrival Station / Airport</label>
+                            <input value={onboardingData.arrivalStation} onChange={(e) => setOnboardingData({ ...onboardingData, arrivalStation: e.target.value })} placeholder="e.g. Puri Railway Station" className="w-full mt-1 px-4 py-2.5 bg-slate-100/50 border-2 focus:border-sky-600 rounded-xl outline-none text-sm transition" />
+                          </div>
+                          <div>
+                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Approximate Arrival Date & Time</label>
+                            <input type="datetime-local" value={onboardingData.arrivalTime} onChange={(e) => setOnboardingData({ ...onboardingData, arrivalTime: e.target.value })} className="w-full mt-1 px-4 py-2.5 bg-slate-100/50 border-2 focus:border-sky-600 rounded-xl outline-none text-sm transition" />
+                          </div>
+                        </div>
+                      )}
+
+                      {onboardingData.transportBooked === 'no' && (
+                        <div className="p-4 bg-orange-50 rounded-xl text-left border border-orange-100 animate-fade-in">
+                          <p className="text-sm text-orange-800 font-medium mb-2">You should book your transport first so we know your exact arrival time!</p>
+                          <div className="flex gap-2">
+                            <a href="https://www.skyscanner.com" target="_blank" rel="noreferrer" className="text-xs font-bold text-white bg-orange-500 px-3 py-1.5 rounded-lg hover:bg-orange-600">Skyscanner</a>
+                            <a href="https://www.irctc.co.in" target="_blank" rel="noreferrer" className="text-xs font-bold text-white bg-blue-600 px-3 py-1.5 rounded-lg hover:bg-blue-700">IRCTC</a>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="pt-2">
+                        {onboardingData.transportBooked === 'no' ? (
+                          <button onClick={() => completeOnboarding(true)} className="w-full py-3 bg-slate-800 text-white rounded-xl font-bold text-base hover:bg-slate-900 transition">Save Draft & I'll book it now</button>
+                        ) : (
+                          <button onClick={() => setOnboardingStep(4)} disabled={onboardingData.transportBooked === 'yes' && !onboardingData.arrivalStation} className="w-full py-3 bg-sky-600 text-white rounded-xl font-bold text-base hover:bg-sky-700 transition disabled:opacity-50">Next</button>
+                        )}
                       </div>
                     </motion.div>
                   )}
 
-                  {/* ── STEP 4: Budget + People + Vibe ── */}
+                  {/* ── STEP 4: Hotels ── */}
                   {onboardingStep === 4 && (
-                    <motion.div
-                      key="step4"
-                      initial={{ opacity: 0, x: 20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0, x: -20 }}
-                      className="space-y-5"
-                    >
-                      <div className="w-12 h-12 bg-orange-50 rounded-2xl flex items-center justify-center mx-auto">
+                    <motion.div key="step4" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-5">
+                      <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto">
+                        <MapPin className="text-blue-600 w-6 h-6" />
+                      </div>
+                      <h2 className="text-2xl font-bold text-slate-900">Accommodation</h2>
+                      <p className="text-sm text-slate-500">Where are you staying in {onboardingData.destination}?</p>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <button onClick={() => setOnboardingData({ ...onboardingData, hotelBooked: 'yes' })} className={`py-3 rounded-xl border-2 transition font-bold text-sm ${onboardingData.hotelBooked === 'yes' ? "border-sky-600 bg-sky-50 text-sky-600" : "border-slate-100 text-slate-600"}`}>Yes, Booked!</button>
+                        <button onClick={() => setOnboardingData({ ...onboardingData, hotelBooked: 'no' })} className={`py-3 rounded-xl border-2 transition font-bold text-sm ${onboardingData.hotelBooked === 'no' ? "border-sky-600 bg-sky-50 text-sky-600" : "border-slate-100 text-slate-600"}`}>Not Yet</button>
+                      </div>
+
+                      {onboardingData.hotelBooked === 'yes' && (
+                        <div className="text-left animate-fade-in">
+                          <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Exact Hotel Name / Address</label>
+                          <input value={onboardingData.hotelAddress} onChange={(e) => setOnboardingData({ ...onboardingData, hotelAddress: e.target.value })} placeholder="e.g. Mayfair Heritage, Puri" className="w-full mt-1 px-4 py-2.5 bg-slate-100/50 border-2 focus:border-sky-600 rounded-xl outline-none text-sm transition" />
+                        </div>
+                      )}
+
+                      {onboardingData.hotelBooked === 'no' && (
+                        <div className="p-4 bg-sky-50 rounded-xl text-left border border-sky-100 animate-fade-in">
+                          <p className="text-sm text-sky-800 font-medium mb-2">Let's find you a place! Check out Booking.com or our local curated list.</p>
+                          <a href="https://www.booking.com" target="_blank" rel="noreferrer" className="inline-block text-xs font-bold text-white bg-blue-800 px-3 py-1.5 rounded-lg hover:bg-blue-900">Booking.com</a>
+                        </div>
+                      )}
+
+                      <div className="pt-2">
+                        {onboardingData.hotelBooked === 'no' ? (
+                          <button onClick={() => completeOnboarding(true)} className="w-full py-3 bg-slate-800 text-white rounded-xl font-bold text-base hover:bg-slate-900 transition">Save Draft & I'll book it now</button>
+                        ) : (
+                          <button onClick={() => setOnboardingStep(5)} disabled={onboardingData.hotelBooked === 'yes' && !onboardingData.hotelAddress} className="w-full py-3 bg-sky-600 text-white rounded-xl font-bold text-base hover:bg-sky-700 transition disabled:opacity-50">Next</button>
+                        )}
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {/* ── STEP 5: Return Transport ── */}
+                  {onboardingStep === 5 && (
+                    <motion.div key="step5" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-5">
+                      <div className="w-12 h-12 bg-rose-50 rounded-2xl flex items-center justify-center mx-auto">
+                        <Send className="text-rose-600 w-6 h-6 rotate-180" />
+                      </div>
+                      <h2 className="text-2xl font-bold text-slate-900">Return Trip</h2>
+                      <p className="text-sm text-slate-500">Have you booked your return ticket back home?</p>
+                      
+                      <div className="grid grid-cols-2 gap-3">
+                        <button onClick={() => setOnboardingData({ ...onboardingData, returnTransportBooked: 'yes' })} className={`py-3 rounded-xl border-2 transition font-bold text-sm ${onboardingData.returnTransportBooked === 'yes' ? "border-sky-600 bg-sky-50 text-sky-600" : "border-slate-100 text-slate-600"}`}>Yes, Booked!</button>
+                        <button onClick={() => setOnboardingData({ ...onboardingData, returnTransportBooked: 'no' })} className={`py-3 rounded-xl border-2 transition font-bold text-sm ${onboardingData.returnTransportBooked === 'no' ? "border-sky-600 bg-sky-50 text-sky-600" : "border-slate-100 text-slate-600"}`}>Not Yet</button>
+                      </div>
+
+                      {onboardingData.returnTransportBooked === 'yes' && (
+                        <div className="text-left animate-fade-in space-y-3">
+                          <div>
+                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Departure Station / Airport</label>
+                            <input value={onboardingData.departureStation} onChange={(e) => setOnboardingData({ ...onboardingData, departureStation: e.target.value })} placeholder="e.g. Puri Railway Station" className="w-full mt-1 px-4 py-2.5 bg-slate-100/50 border-2 focus:border-sky-600 rounded-xl outline-none text-sm transition" />
+                          </div>
+                          <div>
+                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Approximate Departure Date & Time</label>
+                            <input type="datetime-local" value={onboardingData.departureTime} onChange={(e) => setOnboardingData({ ...onboardingData, departureTime: e.target.value })} className="w-full mt-1 px-4 py-2.5 bg-slate-100/50 border-2 focus:border-sky-600 rounded-xl outline-none text-sm transition" />
+                          </div>
+                        </div>
+                      )}
+
+                      {onboardingData.returnTransportBooked === 'no' && (
+                        <div className="p-4 bg-orange-50 rounded-xl text-left border border-orange-100 animate-fade-in">
+                          <p className="text-sm text-orange-800 font-medium mb-2">You should book your return transport to ensure a smooth checkout!</p>
+                        </div>
+                      )}
+
+                      <div className="pt-2">
+                        {onboardingData.returnTransportBooked === 'no' ? (
+                          <button onClick={() => completeOnboarding(true)} className="w-full py-3 bg-slate-800 text-white rounded-xl font-bold text-base hover:bg-slate-900 transition">Save Draft & I'll book it later</button>
+                        ) : (
+                          <button onClick={() => setOnboardingStep(6)} disabled={onboardingData.returnTransportBooked === 'yes' && !onboardingData.departureStation} className="w-full py-3 bg-sky-600 text-white rounded-xl font-bold text-base hover:bg-sky-700 transition disabled:opacity-50">Next</button>
+                        )}
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {/* ── STEP 6: Budget + People + Vibe ── */}
+                  {onboardingStep === 6 && (
+                    <motion.div key="step6" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4">
+                      <div className="w-12 h-12 bg-orange-50 rounded-2xl flex items-center justify-center mx-auto mb-2">
                         <Users className="text-orange-600 w-6 h-6" />
                       </div>
-                      <h2 className="text-2xl font-bold text-slate-900">
-                        Final details
-                      </h2>
-                      <p className="text-sm text-slate-500">
-                        Budget, crew & energy.
-                      </p>
+                      <h2 className="text-2xl font-bold text-slate-900">Final details</h2>
+                      <p className="text-sm text-slate-500 mb-4">Budget, crew & energy.</p>
 
-                      {/* Budget */}
-                      <div className="text-left">
-                        <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">
-                          Budget
-                        </p>
-                        <div className="grid grid-cols-4 gap-2">
-                          {["Budget", "Moderate", "Luxury", "Surprise me"].map(
-                            (b) => (
-                              <button
-                                key={b}
-                                onClick={() =>
-                                  setOnboardingData({
-                                    ...onboardingData,
-                                    budget: b,
-                                  })
-                                }
-                                className={`p-2.5 rounded-xl border-2 transition font-bold text-[10px] ${onboardingData.budget === b ? "border-sky-600 bg-sky-50 text-sky-600" : "border-slate-100 hover:border-slate-200 text-slate-600"}`}
-                              >
-                                {b}
+                      <div className="space-y-4 text-left">
+                        <div>
+                          <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Budget</p>
+                          <div className="grid grid-cols-4 gap-1.5">
+                            {["Budget", "Moderate", "Luxury", "Surprise"].map((b) => (
+                              <button key={b} onClick={() => setOnboardingData({ ...onboardingData, budget: b })} className={`py-1.5 rounded-lg border-2 transition font-bold text-[10px] ${onboardingData.budget === b ? "border-sky-600 bg-sky-50 text-sky-600" : "border-slate-100 text-slate-600"}`}>{b}</button>
+                            ))}
+                          </div>
+                        </div>
 
-                              </button>
-                            ),
-                          )}
+                        <div>
+                          <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Who's going?</p>
+                          <div className="grid grid-cols-2 gap-1.5">
+                            {["Solo", "2 People", "Small Squad", "Large Group"].map((p) => (
+                              <button key={p} onClick={() => setOnboardingData({ ...onboardingData, people: p })} className={`py-1.5 rounded-lg border-2 transition font-bold text-[10px] ${onboardingData.people === p ? "border-sky-600 bg-sky-50 text-sky-600" : "border-slate-100 text-slate-600"}`}>{p}</button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div>
+                          <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Vibe</p>
+                          <div className="grid grid-cols-3 gap-1.5">
+                            {["Relaxing", "Adventure", "Balanced", "Spiritual", "Party", "Surprise"].map((v) => (
+                              <button key={v} onClick={() => setOnboardingData({ ...onboardingData, vibe: v })} className={`py-1.5 rounded-lg border-2 transition font-bold text-[10px] ${onboardingData.vibe === v ? "border-sky-600 bg-sky-50 text-sky-600" : "border-slate-100 text-slate-600"}`}>{v}</button>
+                            ))}
+                          </div>
                         </div>
                       </div>
 
-                      {/* People */}
-                      <div className="text-left">
-                        <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">
-                          Who's going?
-                        </p>
-                        <div className="grid grid-cols-2 gap-2">
-                          {[
-                            "Solo",
-                            "2 People",
-                            "Small Squad",
-                            "Large Group",
-                          ].map((p) => (
-                            <button
-                              key={p}
-                              onClick={() =>
-                                setOnboardingData({
-                                  ...onboardingData,
-                                  people: p,
-                                })
-                              }
-                              className={`p-2.5 rounded-xl border-2 transition font-bold text-xs ${onboardingData.people === p ? "border-sky-600 bg-sky-50 text-sky-600" : "border-slate-100 hover:border-slate-200 text-slate-600"}`}
-                            >
-                              {p}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Vibe */}
-                      <div className="text-left">
-                        <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">
-                          Vibe
-                        </p>
-                        <div className="grid grid-cols-5 gap-2">
-                          {["Relaxing", "Adventure", "Balanced", "Spiritual", "Not decided"].map(
-                            (v) => (
-                              <button
-                                key={v}
-                                onClick={() =>
-                                  setOnboardingData({
-                                    ...onboardingData,
-                                    vibe: v,
-                                  })
-                                }
-                                className={`p-2.5 rounded-xl border-2 transition font-bold text-[9px] ${onboardingData.vibe === v ? "border-sky-600 bg-sky-50 text-sky-600" : "border-slate-100 hover:border-slate-200 text-slate-600"}`}
-                              >
-                                {v}
-                              </button>
-                            ),
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="pt-1">
-                        <button
-                          onClick={() => completeOnboarding(false)}
-                          className="w-full py-3 bg-sky-600 text-white rounded-xl font-bold text-base hover:bg-sky-700 transition"
-                        >
-                          Build Itinerary 🚀
+                      <div className="pt-3">
+                        <button onClick={() => completeOnboarding(false)} className="w-full py-3 bg-sky-600 text-white rounded-xl font-bold text-base hover:bg-sky-700 transition shadow-lg">
+                          Build Itinerary
                         </button>
                       </div>
                     </motion.div>

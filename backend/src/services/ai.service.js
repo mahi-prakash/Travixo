@@ -42,12 +42,12 @@ function parseRetryAfterMs(errMessage) {
   // Groq format: "Please try again in 2m29.1s" or "45s"
   const minSecMatch = errMessage?.match(/(\d+)m([\d.]+)s/);
   if (minSecMatch) return (parseInt(minSecMatch[1]) * 60 + parseFloat(minSecMatch[2])) * 1000;
-  
+
   const secMatch = errMessage?.match(/([\d.]+)s/);
   if (secMatch) return parseFloat(secMatch[1]) * 1000;
 
   // Mistral usually gives a standard retry-after in headers, but if we only have the message:
-  if (errMessage?.toLowerCase().includes('rate limit')) return 60 * 1000; 
+  if (errMessage?.toLowerCase().includes('rate limit')) return 60 * 1000;
 
   return 30 * 1000; // default 30s
 }
@@ -66,7 +66,7 @@ async function callGroq(messages) {
       const response = await client.chat.completions.create({
         model: 'llama-3.1-8b-instant',
         messages,
-        max_tokens: 3000,
+        max_tokens: 4000,
         temperature: 0.2,
       });
       return response.choices[0].message.content;
@@ -78,16 +78,16 @@ async function callGroq(messages) {
       if (status === 429) {
         const retryMs = parseRetryAfterMs(msg);
         const isTPD = msg.includes('TPD') || msg.toLowerCase().includes('tokens per day');
-        
+
         // If TPD exhausted, blacklist for a long time (until reset), else short skip
-        const duration = isTPD ? Math.max(retryMs, 3600000) : retryMs; 
+        const duration = isTPD ? Math.max(retryMs, 3600000) : retryMs;
         blacklistKey(key, duration);
-        
+
         if (isTPD) {
-          sendAlert('Groq Quota Exhausted (TPD)', `Key: ${keyLabel}\nRetry After: ${Math.ceil(duration/1000)}s`);
+          sendAlert('Groq Quota Exhausted (TPD)', `Key: ${keyLabel}\nRetry After: ${Math.ceil(duration / 1000)}s`);
         }
 
-        logger.warn(`⚠️ ${keyLabel} ${isTPD ? 'TPD Exhausted' : 'Rate Limited'} — skipping for ${Math.ceil(duration/1000)}s`);
+        logger.warn(`⚠️ ${keyLabel} ${isTPD ? 'TPD Exhausted' : 'Rate Limited'} — skipping for ${Math.ceil(duration / 1000)}s`);
         continue; // Try next key
       } else if (status === 401) {
         blacklistKey(key, 24 * 60 * 60 * 1000); // Invalid key - 24h blacklist
@@ -123,11 +123,11 @@ async function callMistral(messages) {
     } catch (err) {
       const msg = err.message || '';
       const status = err.status || err.statusCode;
-      
+
       if (status === 429) {
         const retryMs = parseRetryAfterMs(msg);
         blacklistKey(key, retryMs);
-        logger.warn(`⚠️ ${keyLabel} Rate Limited — skipping for ${Math.ceil(retryMs/1000)}s`);
+        logger.warn(`⚠️ ${keyLabel} Rate Limited — skipping for ${Math.ceil(retryMs / 1000)}s`);
         continue;
       } else if (status === 401) {
         blacklistKey(key, 24 * 60 * 60 * 1000);
@@ -166,7 +166,7 @@ const generateAiResponse = async (messages) => {
   // 3. If not in cache, call the expensive AI providers
   try {
     const response = await callGroq(messages);
-    
+
     // 4. Save the successful response to the cache for future users
     aiResponseCache.set(cacheKey, {
       data: response,
@@ -178,7 +178,7 @@ const generateAiResponse = async (messages) => {
     if (err.message === 'ALL_GROQ_EXHAUSTED') {
       logger.warn('⚠️ All Groq keys exhausted — falling back to Mistral');
       const fallbackResponse = await callMistral(messages);
-      
+
       // Save Mistral fallback to cache as well
       aiResponseCache.set(cacheKey, {
         data: fallbackResponse,

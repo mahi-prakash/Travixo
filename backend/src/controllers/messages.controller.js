@@ -1,5 +1,6 @@
 const logger = require('../utils/logger');
 const { generateAiResponse } = require('../services/ai.service.js');
+const { fetchFullDestinationContext } = require('../services/rag.service.js');
 const { getTravelPlannerPrompt } = require('../config/prompts.js');
 
 /**
@@ -7,14 +8,20 @@ const { getTravelPlannerPrompt } = require('../config/prompts.js');
  */
 const sendMessage = async (req, res, next) => {
   try {
-    const { content, destination = 'Unknown', history = [] } = req.body;
+    const { tripId, content, destination, history = [], origin, arrivalStation, hotelAddress } = req.body;
 
     // 1. Get the system prompt from config
-    const systemPrompt = getTravelPlannerPrompt(destination);
+    let systemPrompt = getTravelPlannerPrompt(destination);
+
+    // 1.5 [RAG PIPELINE] Fetch real-world context (Wikipedia, Weather, Reddit, Distance)
+    const destinationContext = await fetchFullDestinationContext(destination, origin, arrivalStation, hotelAddress);
+    if (destinationContext) {
+      systemPrompt += `\n\n[CRITICAL RAG CONTEXT - DO NOT HALLUCINATE]\nHere is the factual summary and live data for ${destination}. Use this context to inform your itinerary:\n${destinationContext}`;
+    }
 
     // 2. Prepare message history for the AI (limit to last 5 messages to prevent 413 Payload Too Large)
     const recentHistory = history.slice(-5);
-    
+
     const chatMessages = [
       { role: 'system', content: systemPrompt },
       ...recentHistory.map(msg => ({
@@ -33,14 +40,14 @@ const sendMessage = async (req, res, next) => {
 
   } catch (error) {
     console.error('CHAT_ERROR:', error);
-    
+
     // Handle specific provider exhaustion errors
     if (error.message.includes('EXHAUSTED')) {
-      return res.status(503).json({ 
-        error: 'All AI providers are currently unavailable. Please try again in a few minutes.' 
+      return res.status(503).json({
+        error: 'All AI providers are currently unavailable. Please try again in a few minutes.'
       });
     }
-    
+
     next(error);
   }
 };
