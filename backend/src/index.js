@@ -25,8 +25,7 @@ app.use(express.json());
  * GLOBAL RATE LIMITING
  * Comment out the line below during heavy local testing if needed.
  */
-//app.use(globalLimiter);
-
+app.use(globalLimiter); //it's work is to stop the spamming or DDOS attacks on the server so keep it on if u r not doing heavy local testing
 // ─── ROUTES ──────────────────────────────────────────────────────────────────
 
 app.use('/api/messages', messageRoutes);
