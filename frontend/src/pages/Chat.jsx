@@ -44,7 +44,8 @@ export default function Chat() {
     deleteTrip,
     isGenerating,
     setIsGenerating,
-    itineraryCache // 🛡️ Added this
+    itineraryCache,
+    aiItineraryCache
   } = useTrip();
 
   // 🏛️ STATE
@@ -78,6 +79,7 @@ export default function Chat() {
   // ── UI state ───────────────────────────────────────────────────────────────
   const [input, setInput] = useState("");
   const [activeTab, setActiveTab] = useState("itinerary");
+  const [activePlanView, setActivePlanView] = useState("user");
   const [activeDay, setActiveDay] = useState("All days");
   const [placeIndex, setPlaceIndex] = useState(0);
   const [activeNearbyId, setActiveNearbyId] = useState(null);
@@ -246,13 +248,14 @@ export default function Chat() {
         [tripId]: {
           ...prev[tripId],
           messages: messages,
-          itinerary: recoveredItinerary,
+          // Only use recovered itinerary if we have NOTHING else (prefer DB cache)
+          itinerary: itineraryCache[tripId] || recoveredItinerary || prev[tripId]?.itinerary,
           messagesFetched: true,
         },
       }));
 
-      // 🔥 SYNC TO GLOBAL CACHE
-      if (recoveredItinerary) {
+      // 🔥 SYNC TO GLOBAL CACHE (Only if missing from DB)
+      if (recoveredItinerary && !itineraryCache[tripId]) {
         saveItineraryToCache(tripId, recoveredItinerary);
       }
     } catch (err) {
@@ -285,16 +288,20 @@ export default function Chat() {
 
     const enhancedDaysArray = await Promise.all(
       dayEntries.map(async ([dayKey, day]) => {
-        // Handle both 'activities' and 'items' keys
-        const activitiesToProcess = day.activities || day.items || [];
+        // Handle both 'items' and 'activities' keys (prioritize items since Planner edits items)
+        const activitiesToProcess = day.items || day.activities || [];
 
         const enhancedActivities = await Promise.all(
-          activitiesToProcess.map(async (activity) => {
-            if (activity.img) return activity;
-            const query = `${activity.title || activity.name} ${activity.location || ""}`.trim();
+          activitiesToProcess.map(async (activity, aIdx) => {
+            const actWithId = {
+              ...activity,
+              id: activity.id || `ai-item-${dayKey}-${aIdx}-${Date.now()}`
+            };
+            if (actWithId.img) return actWithId;
+            const query = `${actWithId.title || actWithId.name} ${actWithId.location || ""}`.trim();
             const imageUrl = await fetchPhoto(query);
             return {
-              ...activity,
+              ...actWithId,
               img:
                 imageUrl ||
                 "https://images.unsplash.com/photo-1488646953014-85cb44e25828?q=80&w=600&auto=format&fit=crop",
@@ -309,15 +316,19 @@ export default function Chat() {
     let enhancedNearby = itineraryData.nearby_places;
     if (Array.isArray(enhancedNearby)) {
       enhancedNearby = await Promise.all(
-        enhancedNearby.map(async (place) => {
+        enhancedNearby.map(async (place, pIdx) => {
+          const placeWithId = {
+            ...place,
+            id: place.id || `nearby-${pIdx}-${Date.now()}`
+          };
           // Skip if AI provided a real image somehow, but overwrite mock unsplash ones
-          if (place.img && !place.img.includes("1554118811") && !place.img.includes("unsplash.com")) {
-            return place;
+          if (placeWithId.img && !placeWithId.img.includes("1554118811") && !placeWithId.img.includes("unsplash.com")) {
+            return placeWithId;
           }
-          const query = `${place.name} ${place.category || ""} ${itineraryData.destination || ""}`.trim();
+          const query = `${placeWithId.name} ${placeWithId.category || ""} ${itineraryData.destination || ""}`.trim();
           const imageUrl = await fetchPhoto(query);
           return {
-            ...place,
+            ...placeWithId,
             img: imageUrl || "https://images.unsplash.com/photo-1488646953014-85cb44e25828?q=80&w=600&auto=format&fit=crop",
           };
         })
@@ -498,6 +509,8 @@ export default function Chat() {
           tripId: tripId,
           content: finalPrompt || text,
           destination: currentTrip?.collected?.destination || realTrips?.find(t => t.id === tripId)?.destination || "Unknown",
+          allowModification: activePlanView === "user",
+          currentItinerary: activePlanView === "user" ? getItinerary() : null,
           origin: currentTrip?.collected?.origin || null,
           arrivalStation: currentTrip?.collected?.arrivalStation || null,
           hotelAddress: currentTrip?.collected?.hotelAddress || null,
@@ -527,50 +540,86 @@ export default function Chat() {
       } catch (e) { console.error("Bot message save failed", e); }
 
       let parsedItinerary = null;
+      let cleanReply = reply;
 
       try {
-        const first = reply.indexOf("{");
-        const last = reply.lastIndexOf("}");
-        if (first !== -1 && last !== -1) {
-          const jsonString = reply.slice(first, last + 1);
+        const itinMatch = reply.match(/\[ITINERARY\]([\s\S]*?)\[\/ITINERARY\]/i);
+
+        if (itinMatch) {
+          let jsonString = itinMatch[1].replace(/,\s*([\]}])/g, '$1');
           const raw = JSON.parse(jsonString);
           if (raw.days) {
             parsedItinerary = await enhanceItineraryWithImages(raw);
           }
+          cleanReply = reply.replace(/\[ITINERARY\][\s\S]*?\[\/ITINERARY\]/gi, "").trim();
+        } 
+        else {
+          // Fallback legacy greedy parser for full itineraries if tags are missing
+          const first = reply.indexOf("{");
+          const last = reply.lastIndexOf("}");
+          if (first !== -1 && last !== -1) {
+            let jsonString = reply.slice(first, last + 1).replace(/,\s*([\]}])/g, '$1');
+            const raw = JSON.parse(jsonString);
+            if (raw.days) {
+              parsedItinerary = await enhanceItineraryWithImages(raw);
+              cleanReply = reply.replace(reply.slice(first, last + 1), "").trim();
+            }
+          }
         }
       } catch (err) {
-        console.error("Itinerary parse error:", err);
+        console.error("Payload parse error:", err);
       }
 
-      // Clean reply: Remove the block AND the tags/brackets
-      const cleanReply = reply
-        .replace(/\[ITINERARY\][\s\S]*?\[\/ITINERARY\]/gi, "")
-        .replace(/\[[\w\s]+Itinerary\][\s\S]*?(\{[\s\S]*\})/gi, "")
-        .replace(/\{[\s\S]*"days"[\s\S]*\}/gi, "")
-        .trim();
+      if (!parsedItinerary) {
+        // Anti-Spam: If the fallback text is a massive unparsed JSON block, hide it from the user
+        if (cleanReply.length > 500 && cleanReply.includes("{") && cleanReply.includes("}")) {
+          cleanReply = "I tried to generate your itinerary, but the format got a little corrupted along the way! Could you please ask me to try again?";
+        }
+      }
 
       if (cleanReply) {
-        const newMessages = [
-          {
-            id: Date.now() + 2,
-            from: "bot",
-            text: cleanReply,
-          }
-        ];
+        const paragraphs = cleanReply.split(/\n\n+/).map(p => p.trim()).filter(Boolean);
 
-        if (parsedItinerary) {
-          newMessages.push({
-            id: Date.now() + 3,
-            from: "bot",
-            text: "✨ **Your plan is ready!** I've created a copy in 'Your Plan' that you can now fully customize in the Planner. Feel free to add, remove, or move things around! 🗺️",
-          });
+        // --- TYPING EFFECT ---
+        for (let i = 0; i < paragraphs.length; i++) {
+          const p = paragraphs[i];
+
+          setMessages(tripId, (prev) => [
+            ...prev,
+            {
+              id: Date.now() + i,
+              from: "bot",
+              text: p,
+            }
+          ]);
+
+          // Wait 1.5s before showing the next paragraph (if there are more, or if we have a final itinerary message)
+          if (i < paragraphs.length - 1 || parsedItinerary) {
+            await new Promise(resolve => setTimeout(resolve, 2500));
+          }
         }
 
-        setMessages(tripId, (prev) => [...prev, ...newMessages]);
+        if (parsedItinerary) {
+          setMessages(tripId, (prev) => [
+            ...prev,
+            {
+              id: Date.now() + paragraphs.length,
+              from: "bot",
+              text: "✨ **Your plan is ready!** I've created a copy in 'Your Plan' that you can now fully customize in the Planner. Feel free to add, remove, or move things around! 🗺️",
+            }
+          ]);
+        }
       }
 
       if (parsedItinerary) {
+        // Save the main editable itinerary
         setItinerary(tripId, parsedItinerary);
+        
+        // 🛡️ If this trip doesn't have a permanent AI Plan yet, save it to the dedicated db column!
+        const existingAiPlan = (aiItineraryCache || {})[tripId];
+        if (!existingAiPlan) {
+           updateAiItinerary(tripId, parsedItinerary);
+        }
       }
 
       // 🔥 FIX: STOP LOOP
@@ -738,16 +787,20 @@ export default function Chat() {
 
   // ── Derived values for panels ──────────────────────────────────────────────
   const activeItinerary = getItinerary();
+  const activeItineraryToRender = activePlanView === "ai"
+    ? (activeItinerary?.ai_locked_copy || activeItinerary)
+    : activeItinerary;
+
   const messages = getMessages();
   const tripMeta = getActiveTripMeta();
 
-  const itineraryDays = Array.isArray(activeItinerary?.days)
-    ? activeItinerary.days
-    : Object.values(activeItinerary?.days || {});
+  const itineraryDays = Array.isArray(activeItineraryToRender?.days)
+    ? activeItineraryToRender.days
+    : Object.values(activeItineraryToRender?.days || {});
 
   const places =
     itineraryDays.flatMap((day, dIdx) =>
-      (day.activities || day.items || []).map((act) => ({
+      (day.items || day.activities || []).map((act) => ({
         ...act,
         dayNum: getDayNumber(day, dIdx),
       })),
@@ -906,13 +959,7 @@ export default function Chat() {
                             </div>
                             <div>
                               <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Number of Days</label>
-                              <div className="grid grid-cols-4 gap-2 mt-1">
-                                {["3", "5", "7", "Surprise"].map((d) => (
-                                  <button key={d} onClick={() => setOnboardingData({ ...onboardingData, days: d })} className={`py-2 rounded-xl border-2 transition font-bold text-xs ${onboardingData.days === d ? "border-sky-600 bg-sky-50 text-sky-600" : "border-slate-100 hover:border-slate-200 text-slate-600"}`}>
-                                    {d}
-                                  </button>
-                                ))}
-                              </div>
+                              <input type="number" min="1" max="30" value={onboardingData.days} onChange={(e) => setOnboardingData({ ...onboardingData, days: e.target.value })} placeholder="e.g. 4" className="w-full mt-1 px-4 py-2.5 bg-slate-100/50 border-2 border-transparent focus:border-sky-600 rounded-xl outline-none text-sm transition" />
                             </div>
                           </>
                         )}
@@ -954,21 +1001,19 @@ export default function Chat() {
                       )}
 
                       {onboardingData.transportBooked === 'no' && (
-                        <div className="p-4 bg-orange-50 rounded-xl text-left border border-orange-100 animate-fade-in">
-                          <p className="text-sm text-orange-800 font-medium mb-2">You should book your transport first so we know your exact arrival time!</p>
-                          <div className="flex gap-2">
-                            <a href="https://www.skyscanner.com" target="_blank" rel="noreferrer" className="text-xs font-bold text-white bg-orange-500 px-3 py-1.5 rounded-lg hover:bg-orange-600">Skyscanner</a>
-                            <a href="https://www.irctc.co.in" target="_blank" rel="noreferrer" className="text-xs font-bold text-white bg-blue-600 px-3 py-1.5 rounded-lg hover:bg-blue-700">IRCTC</a>
+                        <div className="text-left animate-fade-in space-y-3">
+                          <div className="p-3 bg-orange-50 rounded-xl border border-orange-100 mb-2">
+                            <p className="text-xs text-orange-800 font-medium">No worries! Let us know your expected arrival so we can plan day 1.</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Expected Arrival Date & Time</label>
+                            <input type="datetime-local" value={onboardingData.arrivalTime} onChange={(e) => setOnboardingData({ ...onboardingData, arrivalTime: e.target.value })} className="w-full mt-1 px-4 py-2.5 bg-slate-100/50 border-2 focus:border-sky-600 rounded-xl outline-none text-sm transition" />
                           </div>
                         </div>
                       )}
 
                       <div className="pt-2">
-                        {onboardingData.transportBooked === 'no' ? (
-                          <button onClick={() => completeOnboarding(true)} className="w-full py-3 bg-slate-800 text-white rounded-xl font-bold text-base hover:bg-slate-900 transition">Save Draft & I'll book it now</button>
-                        ) : (
-                          <button onClick={() => setOnboardingStep(4)} disabled={onboardingData.transportBooked === 'yes' && !onboardingData.arrivalStation} className="w-full py-3 bg-sky-600 text-white rounded-xl font-bold text-base hover:bg-sky-700 transition disabled:opacity-50">Next</button>
-                        )}
+                        <button onClick={() => setOnboardingStep(4)} disabled={(onboardingData.transportBooked === 'yes' && !onboardingData.arrivalStation) || (onboardingData.transportBooked === 'no' && !onboardingData.arrivalTime)} className="w-full py-3 bg-sky-600 text-white rounded-xl font-bold text-base hover:bg-sky-700 transition disabled:opacity-50">Next</button>
                       </div>
                     </motion.div>
                   )}
@@ -995,18 +1040,14 @@ export default function Chat() {
                       )}
 
                       {onboardingData.hotelBooked === 'no' && (
-                        <div className="p-4 bg-sky-50 rounded-xl text-left border border-sky-100 animate-fade-in">
-                          <p className="text-sm text-sky-800 font-medium mb-2">Let's find you a place! Check out Booking.com or our local curated list.</p>
-                          <a href="https://www.booking.com" target="_blank" rel="noreferrer" className="inline-block text-xs font-bold text-white bg-blue-800 px-3 py-1.5 rounded-lg hover:bg-blue-900">Booking.com</a>
+                        <div className="text-left animate-fade-in">
+                          <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Preferred Area / Neighborhood (Optional)</label>
+                          <input value={onboardingData.hotelAddress} onChange={(e) => setOnboardingData({ ...onboardingData, hotelAddress: e.target.value })} placeholder="e.g. Near the Beach" className="w-full mt-1 px-4 py-2.5 bg-slate-100/50 border-2 focus:border-sky-600 rounded-xl outline-none text-sm transition" />
                         </div>
                       )}
 
                       <div className="pt-2">
-                        {onboardingData.hotelBooked === 'no' ? (
-                          <button onClick={() => completeOnboarding(true)} className="w-full py-3 bg-slate-800 text-white rounded-xl font-bold text-base hover:bg-slate-900 transition">Save Draft & I'll book it now</button>
-                        ) : (
-                          <button onClick={() => setOnboardingStep(5)} disabled={onboardingData.hotelBooked === 'yes' && !onboardingData.hotelAddress} className="w-full py-3 bg-sky-600 text-white rounded-xl font-bold text-base hover:bg-sky-700 transition disabled:opacity-50">Next</button>
-                        )}
+                        <button onClick={() => setOnboardingStep(5)} disabled={onboardingData.hotelBooked === 'yes' && !onboardingData.hotelAddress} className="w-full py-3 bg-sky-600 text-white rounded-xl font-bold text-base hover:bg-sky-700 transition disabled:opacity-50">Next</button>
                       </div>
                     </motion.div>
                   )}
@@ -1019,7 +1060,7 @@ export default function Chat() {
                       </div>
                       <h2 className="text-2xl font-bold text-slate-900">Return Trip</h2>
                       <p className="text-sm text-slate-500">Have you booked your return ticket back home?</p>
-                      
+
                       <div className="grid grid-cols-2 gap-3">
                         <button onClick={() => setOnboardingData({ ...onboardingData, returnTransportBooked: 'yes' })} className={`py-3 rounded-xl border-2 transition font-bold text-sm ${onboardingData.returnTransportBooked === 'yes' ? "border-sky-600 bg-sky-50 text-sky-600" : "border-slate-100 text-slate-600"}`}>Yes, Booked!</button>
                         <button onClick={() => setOnboardingData({ ...onboardingData, returnTransportBooked: 'no' })} className={`py-3 rounded-xl border-2 transition font-bold text-sm ${onboardingData.returnTransportBooked === 'no' ? "border-sky-600 bg-sky-50 text-sky-600" : "border-slate-100 text-slate-600"}`}>Not Yet</button>
@@ -1039,17 +1080,13 @@ export default function Chat() {
                       )}
 
                       {onboardingData.returnTransportBooked === 'no' && (
-                        <div className="p-4 bg-orange-50 rounded-xl text-left border border-orange-100 animate-fade-in">
-                          <p className="text-sm text-orange-800 font-medium mb-2">You should book your return transport to ensure a smooth checkout!</p>
+                        <div className="p-3 bg-sky-50 rounded-xl border border-sky-100 text-left animate-fade-in">
+                          <p className="text-xs text-sky-800 font-medium">No problem! We'll just plan based on the number of days you selected.</p>
                         </div>
                       )}
 
                       <div className="pt-2">
-                        {onboardingData.returnTransportBooked === 'no' ? (
-                          <button onClick={() => completeOnboarding(true)} className="w-full py-3 bg-slate-800 text-white rounded-xl font-bold text-base hover:bg-slate-900 transition">Save Draft & I'll book it later</button>
-                        ) : (
-                          <button onClick={() => setOnboardingStep(6)} disabled={onboardingData.returnTransportBooked === 'yes' && !onboardingData.departureStation} className="w-full py-3 bg-sky-600 text-white rounded-xl font-bold text-base hover:bg-sky-700 transition disabled:opacity-50">Next</button>
-                        )}
+                        <button onClick={() => setOnboardingStep(6)} disabled={onboardingData.returnTransportBooked === 'yes' && (!onboardingData.departureStation || !onboardingData.departureTime)} className="w-full py-3 bg-sky-600 text-white rounded-xl font-bold text-base hover:bg-sky-700 transition disabled:opacity-50">Next</button>
                       </div>
                     </motion.div>
                   )}
@@ -1225,8 +1262,13 @@ export default function Chat() {
                 ))}
                 {isSending && (
                   <div className="flex justify-start">
-                    <div className="bg-sky-50 border border-sky-100 rounded-2xl rounded-bl-none px-5 py-3 text-sm text-slate-400">
-                      Thinking…
+                    <div className="bg-sky-50 border border-sky-100 rounded-2xl rounded-bl-none px-5 py-3 text-sm text-slate-500 font-medium flex items-center">
+                      Thinking
+                      <span className="flex gap-[2px] ml-1 mt-[2px]">
+                        <span className="w-1 h-1 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                        <span className="w-1 h-1 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                        <span className="w-1 h-1 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                      </span>
                     </div>
                   </div>
                 )}
@@ -1258,20 +1300,38 @@ export default function Chat() {
           {/* ══════════ RIGHT PANEL ══════════ */}
           <aside className="h-fit lg:h-full">
             <div className="h-[500px] lg:h-[570px] rounded-[32px] bg-white shadow-2xl border border-slate-100 flex flex-col relative">
+              {/* FLOATING TOGGLE */}
+              {activeTab === "itinerary" && (
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 flex gap-1 bg-slate-100 p-1 rounded-full shadow-lg z-50 border border-white">
+                  <button
+                    onClick={() => setActivePlanView("ai")}
+                    className={`px-4 py-1.5 text-xs font-bold rounded-full transition-all ${activePlanView === "ai" ? "bg-white text-slate-800 shadow-sm" : "text-slate-400 hover:text-slate-600"}`}
+                  >
+                    AI Plan
+                  </button>
+                  <button
+                    onClick={() => setActivePlanView("user")}
+                    className={`px-4 py-1.5 text-xs font-bold rounded-full transition-all flex items-center gap-1.5 ${activePlanView === "user" ? "bg-white text-slate-800 shadow-sm" : "text-slate-400 hover:text-slate-600"}`}
+                  >
+                    Your Plan <Edit3 size={12} />
+                  </button>
+                </div>
+              )}
+
               {/* Tabs */}
-              <div className="px-4 sm:px-11 pt-6 flex justify-between overflow-x-auto no-scrollbar">
+              <div className="px-4 sm:px-11 pt-6 mt-1.5 flex justify-between overflow-x-auto no-scrollbar">
                 <div className="flex gap-2 text-xs sm:text-s font-semibold whitespace-nowrap">
                   {["itinerary", "places", "nearby"].map((tab) => (
                     <button
                       key={tab}
                       onClick={() => setActiveTab(tab)}
-                      className={`px-3 sm:px-5.5 py-1.5 rounded-full border transition-all duration-200 ${activeTab === tab
+                      className={`px-3 sm:px-5.5 py-1.5 pb-2 rounded-full border transition-all duration-200 ${activeTab === tab
                         ? "bg-slate-900 text-white border-slate-800"
                         : "bg-white text-slate-600 border-sky-200 hover:bg-sky-100 hover:border-sky-400"
                         }`}
                     >
                       {tab === "itinerary"
-                        ? "Live Itinerary"
+                        ? "Itinerary"
                         : tab === "places"
                           ? "Places"
                           : "Explore Nearby"}
@@ -1345,15 +1405,15 @@ export default function Chat() {
                                 <div className="h-px flex-1 bg-slate-100" />
                               </div>
 
-                              {(day.activities || day.items || []).map(
+                              {(day.items || day.activities || []).map(
                                 (activity, actIdx) => {
                                   const Icon = activity.icon || MapPin;
                                   const isLastInDay =
                                     actIdx ===
-                                    (day.activities?.length || 1) - 1;
+                                    (day.items?.length || day.activities?.length || 1) - 1;
                                   const isLastDay =
                                     dayIdx ===
-                                    (activeItinerary.days?.length || 1) - 1;
+                                    (activeItineraryToRender.days?.length || 1) - 1;
 
                                   return (
                                     <motion.div
@@ -1421,14 +1481,13 @@ export default function Chat() {
                       )}
                     </div>
 
-                    {/* Finalize button */}
                     <motion.button
                       initial={{ opacity: 0, scale: 0.95 }}
                       animate={{ opacity: 1, scale: 1 }}
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
                       onClick={() => navigate("/bookings")}
-                      disabled={!activeItinerary}
+                      disabled={!activeItineraryToRender}
                       className="w-full py-4 rounded-2xl bg-gradient-to-r from-sky-700 to-sky-500 text-white font-bold text-sm shadow-xl shadow-sky-100 flex items-center justify-center gap-3 hover:shadow-2xl hover:shadow-sky-300 transition-all duration-300 disabled:opacity-40"
                     >
                       <Sparkles size={18} />

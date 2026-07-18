@@ -297,6 +297,8 @@ export default function Planner() {
     activeTripId: contextActiveTripId,
     setActiveTrip,
     itineraryCache,
+    aiItineraryCache,
+    saveItineraryToCache,
     loading,
     trips,
     updateTripItinerary,
@@ -314,13 +316,15 @@ export default function Planner() {
   const activeTrip = (trips || []).find(t => t.id === activeTripId);
 
   // 🔥 Is Modified Check: Does the user plan differ from the original AI plan?
+  const aiSourceForCheck = activeTrip?.ai_itinerary || (aiItineraryCache || {})[activeTripId];
   const isModified = activeTrip?.itinerary &&
-    activeTrip?.ai_itinerary &&
-    JSON.stringify(activeTrip.itinerary) !== JSON.stringify(activeTrip.ai_itinerary);
+    aiSourceForCheck &&
+    JSON.stringify(activeTrip.itinerary) !== JSON.stringify(aiSourceForCheck);
 
   // 🌍 Dynamic Nearby Places from AI
   const activeItinerary = activeTrip?.itinerary || (itineraryCache || {})[activeTripId] || {};
-  const aiNearbyPlaces = activeItinerary.nearby_places || activeTrip?.ai_itinerary?.nearby_places || [];
+  const aiSourceForNearby = activeTrip?.ai_itinerary || (aiItineraryCache || {})[activeTripId];
+  const aiNearbyPlaces = activeItinerary.nearby_places || aiSourceForNearby?.nearby_places || [];
 
   const [days, setDays] = useState({});
   const [planMode, setPlanMode] = useState("user");
@@ -334,6 +338,68 @@ export default function Planner() {
   const [addFeedback, setAddFeedback] = useState(null);
   const [editingTimeId, setEditingTimeId] = useState(null);
   const [isCompleted, setIsCompleted] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  // 🚨 PROTECT AGAINST TAB CLOSE (Native popup)
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      if (hasUnsavedChanges) {
+        e.preventDefault();
+        e.returnValue = "You have unsaved changes. Are you sure you want to leave without saving?";
+        return e.returnValue;
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [hasUnsavedChanges]);
+
+  // 💾 SILENT AUTO-SAVE ON UNMOUNT (For client-side navigation like clicking 'Chat')
+  const unsavedRef = useRef(false);
+  const daysRef = useRef({});
+  const tripIdRef = useRef(activeTripId);
+
+  useEffect(() => {
+    unsavedRef.current = hasUnsavedChanges;
+    daysRef.current = days;
+    tripIdRef.current = activeTripId;
+  }, [hasUnsavedChanges, days, activeTripId]);
+
+  useEffect(() => {
+    return () => {
+      if (unsavedRef.current && tripIdRef.current) {
+        // Automatically save if they navigate away without clicking Save
+        const currentItin = (itineraryCache || {})[tripIdRef.current] || {};
+        updateTripItinerary(tripIdRef.current, { ...currentItin, days: daysRef.current });
+      }
+    };
+  }, []);
+
+  // Manual Save Function
+  const saveChanges = async () => {
+    if (!unsavedRef.current || isSaving) {
+      return;
+    }
+    
+    setIsSaving(true);
+    try {
+      const currentItin = activeTrip?.itinerary || {};
+      const response = await updateTripItinerary(tripIdRef.current, { ...currentItin, days: daysRef.current });
+      
+      if (response && response.error) {
+        throw new Error(response.error.message);
+      }
+
+      setHasUnsavedChanges(false);
+      unsavedRef.current = false; // Manually sync the ref instantly
+      
+      alert("Plan saved successfully!");
+    } catch (err) {
+      console.error(err);
+      alert("Failed to save plan. Please try again.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   // 🔄 INITIAL LOAD ONLY
   useEffect(() => {
@@ -376,8 +442,8 @@ export default function Planner() {
           color: dayData.color || "#0284c7",
           // 🛡️ FIX: Normalize 'activities' vs 'items' mismatch
           items: (dayData.items || dayData.activities || []).map((act, aIdx) => ({
-            id: act.id || `item-${dayId}-${aIdx}-${Date.now()}`,
             ...act,
+            id: act.id || `item-${dayId}-${aIdx}-${Date.now()}`,
             name: act.title || act.name || "Activity",
           }))
         };
@@ -400,8 +466,8 @@ export default function Planner() {
           ...v,
           id,
           items: (v.items || v.activities || []).map((act, aIdx) => ({
-            id: act.id || `item-${id}-${aIdx}-${Date.now()}`,
             ...act,
+            id: act.id || `item-${id}-${aIdx}-${Date.now()}`,
             name: act.title || act.name || "Activity",
           }))
         };
@@ -409,8 +475,10 @@ export default function Planner() {
       setDays(normalizedAi);
       hasInitializedRef.current = activeTripId;
       // 🔥 PERSIST: Save the initial copy to DB immediately so it's not null anymore
-      saveItineraryToCache(activeTripId, { days: normalizedAi });
-      updateTripItinerary(activeTripId, { days: normalizedAi });
+      const currentItin = activeTrip?.itinerary || {};
+      const seededItin = { ...currentItin, days: normalizedAi };
+      saveItineraryToCache(activeTripId, seededItin);
+      updateTripItinerary(activeTripId, seededItin);
     }
   }, [activeTripId, activeTrip, itineraryCache]);
 
@@ -427,21 +495,11 @@ export default function Planner() {
   });
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
 
-  // 💾 AUTO-SAVE ENGINE: Persists changes to backend automatically
-  useEffect(() => {
-    if (planMode !== 'user' || !activeTripId || Object.keys(days).length === 0) return;
-
-    const timer = setTimeout(() => {
-      updateTripItinerary(activeTripId, { days });
-    }, 2000); // Wait 2 seconds of inactivity before saving
-
-    return () => clearTimeout(timer);
-  }, [days, activeTripId, planMode]);
 
   // Helper to format the permanent AI backup into Planner-friendly structure
   const getAiVersion = () => {
-    // 🛡️ Always pull from the immutable backup column, NOT the cache
-    const aiSource = activeTrip?.ai_itinerary;
+    // 🛡️ Always pull from the immutable backup (ai_itinerary), fallback to itinerary for legacy trips
+    const aiSource = activeTrip?.ai_itinerary || (aiItineraryCache || {})[activeTripId] || activeTrip?.itinerary;
     if (!aiSource || !aiSource.days) return {};
 
     const plannerObj = {};
@@ -458,8 +516,8 @@ export default function Planner() {
         date: day.date || `Day ${idx + 1}`,
         color: "#0891b2", // Distinguish AI color (Cyan)
         items: (day.activities || day.items || []).map((act, aIdx) => ({
-          id: `ai-item-${id}-${aIdx}`,
           ...act,
+          id: act.id || `ai-item-${id}-${aIdx}`,
           name: act.title || act.name || "Activity",
         }))
       };
@@ -514,7 +572,8 @@ export default function Planner() {
       const newDays = { ...days, [source.droppableId]: { ...day, items: newItems } };
       setDays(newDays);
       saveItineraryToCache(activeTripId, { days: newDays });
-      updateTripItinerary(activeTripId, { days: newDays }); // 🔥 Immediate DB Sync
+      unsavedRef.current = true;
+      setHasUnsavedChanges(true);
     } else {
       const sourceDay = days[source.droppableId];
       const destDay = days[destination.droppableId];
@@ -529,7 +588,8 @@ export default function Planner() {
       };
       setDays(newDays);
       saveItineraryToCache(activeTripId, { days: newDays });
-      updateTripItinerary(activeTripId, { days: newDays }); // 🔥 Immediate DB Sync
+      unsavedRef.current = true;
+      setHasUnsavedChanges(true);
     }
   };
 
@@ -567,7 +627,7 @@ export default function Planner() {
         }
       };
       saveItineraryToCache(activeTripId, { days: newDays });
-      updateTripItinerary(activeTripId, { days: newDays }); // 🔥 Immediate DB Sync
+      setHasUnsavedChanges(true);
       return newDays;
     });
 
@@ -596,6 +656,8 @@ export default function Planner() {
         }
       };
     });
+    unsavedRef.current = true;
+    setHasUnsavedChanges(true);
     setEditingTimeId(null);
   };
 
@@ -613,7 +675,8 @@ export default function Planner() {
 
     setDays(newDays);
     saveItineraryToCache(activeTripId, { days: newDays });
-    updateTripItinerary(activeTripId, { days: newDays }); // 🔥 Immediate DB Sync
+    unsavedRef.current = true;
+    setHasUnsavedChanges(true);
   };
 
   const restorePlan = () => {
@@ -639,8 +702,8 @@ export default function Planner() {
         ...v,
         id,
         items: (v.items || v.activities || []).map((act, aIdx) => ({
-          id: act.id || `item-${id}-${aIdx}-${Date.now()}`,
           ...act,
+          id: act.id || `item-${id}-${aIdx}-${Date.now()}`,
           name: act.title || act.name || "Activity",
         }))
       };
@@ -648,12 +711,13 @@ export default function Planner() {
 
     setDays(normalizedAi);
     saveItineraryToCache(activeTripId, { days: normalizedAi });
-    updateTripItinerary(activeTripId, { days: normalizedAi });
+    setHasUnsavedChanges(true);
 
     // 🔥 Success feedback
     setAddFeedback({ type: 'success', message: 'Restored to original AI plan!' });
     setTimeout(() => setAddFeedback(null), 3000);
   };
+
 
   const updateItemRating = (dayId, itemId, rating) => {
     if (isReadOnly) return;
@@ -874,11 +938,26 @@ export default function Planner() {
                 <div className="flex flex-col">
                   <h2 className="text-[28px] font-bold text-slate-800 tracking-tight">Itinerary</h2>
 
-                  {/* Current Trip Display */}
-                  <div className="flex items-center gap-1.5 px-0.5 py-0.5">
-                    <span className="text-slate-400 text-[10px] font-black uppercase tracking-[0.2em]">
-                      {"(" + (activeTrip?.title || activeTrip?.name || "New Trip") + ")"}
-                    </span>
+                  {/* Current Trip Display & Switcher */}
+                  <div className="flex items-center gap-1.5 px-0.5 py-0.5 relative group">
+                    <select
+                      value={activeTripId || ""}
+                      onChange={(e) => setActiveTrip(e.target.value)}
+                      className="appearance-none bg-transparent border-none text-slate-400 text-[10px] font-black uppercase tracking-[0.2em] cursor-pointer outline-none hover:text-sky-600 transition-colors pr-4"
+                    >
+                      {trips && trips.length > 0 ? (
+                        trips.map(t => (
+                          <option key={t.id} value={t.id} className="text-slate-800 font-sans tracking-normal capitalize">
+                            {t.title || t.name || "Untitled Trip"}
+                          </option>
+                        ))
+                      ) : (
+                        <option value={activeTripId || ""}>{activeTrip?.title || activeTrip?.name || "New Trip"}</option>
+                      )}
+                    </select>
+                    <div className="absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none opacity-50 group-hover:opacity-100 group-hover:text-sky-600 transition-all">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    </div>
                   </div>
                 </div>
 
@@ -902,6 +981,23 @@ export default function Planner() {
                   </div>
 
 
+
+
+                  {/* Save Changes Button */}
+                  {planMode === 'user' && (
+                    <button
+                      onClick={saveChanges}
+                      disabled={!hasUnsavedChanges || isSaving}
+                      className={`px-4 h-9 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                        hasUnsavedChanges 
+                          ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-md shadow-emerald-500/20 scale-105' 
+                          : 'bg-slate-100/50 text-slate-400 border border-slate-200/50 hover:bg-slate-100 cursor-not-allowed'
+                      }`}
+                    >
+                      <Save size={14} className={isSaving ? "animate-pulse" : ""} />
+                      {isSaving ? "Saving..." : "Save Changes"}
+                    </button>
+                  )}
 
                   {/* Plan Actions Filter Button */}
                   {planMode === 'user' && (

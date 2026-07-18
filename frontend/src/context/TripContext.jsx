@@ -12,6 +12,7 @@ export const TripProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [itineraryCache, setItineraryCache] = useState({});
+  const [aiItineraryCache, setAiItineraryCache] = useState({});
 
   // 🔄 Fetch Trip from Supabase on Login
   useEffect(() => {
@@ -21,6 +22,7 @@ export const TripProvider = ({ children }) => {
       setTrips([]);
       setActiveTripId(null);
       setItineraryCache({});
+      setAiItineraryCache({});
     }
   }, [user]);
 
@@ -38,10 +40,13 @@ export const TripProvider = ({ children }) => {
       if (data && data.length > 0) {
         setActiveTripId(data[0].id);
         const cache = {};
+        const aiCache = {};
         data.forEach(t => {
           if (t.itinerary) cache[t.id] = t.itinerary;
+          if (t.ai_itinerary) aiCache[t.id] = t.ai_itinerary;
         });
         setItineraryCache(cache);
+        setAiItineraryCache(aiCache);
       }
     }
     setLoading(false);
@@ -83,13 +88,7 @@ export const TripProvider = ({ children }) => {
     if (!user) return null;
 
     try {
-      // 1. Delete existing trip for this user (will cascade delete messages)
-      await supabase
-        .from('trips')
-        .delete()
-        .eq('user_id', user.id);
-
-      // 2. Insert brand new trip
+      // 1. Insert brand new trip (No longer deleting old trips!)
       const tripPayload = {
         user_id: user.id,
         title: payload.title,
@@ -109,7 +108,7 @@ export const TripProvider = ({ children }) => {
 
       if (error) throw error;
 
-      setTrips([data]);
+      setTrips(prev => [data, ...prev]);
       setActiveTripId(data.id);
       if (data.itinerary) {
         setItineraryCache(prev => ({ ...prev, [data.id]: data.itinerary }));
@@ -131,13 +130,17 @@ export const TripProvider = ({ children }) => {
 
     if (error) {
       console.error("Error updating trip:", error);
-      return;
+      return { error };
     }
 
     setTrips(prev => prev.map(t => t.id === id ? data : t));
     if (data.itinerary) {
       setItineraryCache(prev => ({ ...prev, [id]: data.itinerary }));
     }
+    if (data.ai_itinerary) {
+      setAiItineraryCache(prev => ({ ...prev, [id]: data.ai_itinerary }));
+    }
+    return { data };
   };
 
   const addItemToTrip = async (tripId, dayId, item) => {
@@ -168,7 +171,6 @@ export const TripProvider = ({ children }) => {
   const saveItineraryToCache = (id, itinerary) => {
     if (!id) return;
     setItineraryCache(prev => ({ ...prev, [id]: itinerary }));
-    updateTrip(id, { itinerary });
   };
 
   const setActiveTrip = (tripId) => {
@@ -192,6 +194,11 @@ export const TripProvider = ({ children }) => {
       delete newCache[tripId];
       return newCache;
     });
+    setAiItineraryCache(prev => {
+      const newCache = { ...prev };
+      delete newCache[tripId];
+      return newCache;
+    });
     if (activeTripId === tripId) {
       setActiveTripId(null);
     }
@@ -210,12 +217,13 @@ export const TripProvider = ({ children }) => {
         setActiveTrip,
         fetchTrips,
         itineraryCache,
+        aiItineraryCache,
         saveItineraryToCache,
         addItemToTrip,
         deleteTrip,
         updateTrip,
         updateTripItinerary: (id, itin) => updateTrip(id, { itinerary: itin }),
-        updateAiItinerary: (id, itin) => updateTrip(id, { itinerary: itin }),
+        updateAiItinerary: (id, itin) => updateTrip(id, { ai_itinerary: itin }),
         isGenerating,
         setIsGenerating,
         enhanceItineraryWithImages
