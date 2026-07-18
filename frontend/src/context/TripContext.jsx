@@ -87,8 +87,14 @@ export const TripProvider = ({ children }) => {
   const createTrip = async (payload) => {
     if (!user) return null;
 
+
     try {
-      // 1. Insert brand new trip (No longer deleting old trips!)
+      // 1. Delete existing trip for this user (will cascade delete messages)
+      await supabase
+        .from('trips')
+        .delete()
+        .eq('user_id', user.id);
+      // 2. Insert brand new trip
       const tripPayload = {
         user_id: user.id,
         title: payload.title,
@@ -108,7 +114,7 @@ export const TripProvider = ({ children }) => {
 
       if (error) throw error;
 
-      setTrips(prev => [data, ...prev]);
+      setTrips([data]);
       setActiveTripId(data.id);
       if (data.itinerary) {
         setItineraryCache(prev => ({ ...prev, [data.id]: data.itinerary }));
@@ -164,7 +170,7 @@ export const TripProvider = ({ children }) => {
     };
 
     newItinerary.days[dayId].activities = [...activities, newItem];
-    
+
     await updateTrip(tripId, { itinerary: newItinerary });
   };
 

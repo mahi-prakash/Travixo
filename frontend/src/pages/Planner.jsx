@@ -938,26 +938,11 @@ export default function Planner() {
                 <div className="flex flex-col">
                   <h2 className="text-[28px] font-bold text-slate-800 tracking-tight">Itinerary</h2>
 
-                  {/* Current Trip Display & Switcher */}
-                  <div className="flex items-center gap-1.5 px-0.5 py-0.5 relative group">
-                    <select
-                      value={activeTripId || ""}
-                      onChange={(e) => setActiveTrip(e.target.value)}
-                      className="appearance-none bg-transparent border-none text-slate-400 text-[10px] font-black uppercase tracking-[0.2em] cursor-pointer outline-none hover:text-sky-600 transition-colors pr-4"
-                    >
-                      {trips && trips.length > 0 ? (
-                        trips.map(t => (
-                          <option key={t.id} value={t.id} className="text-slate-800 font-sans tracking-normal capitalize">
-                            {t.title || t.name || "Untitled Trip"}
-                          </option>
-                        ))
-                      ) : (
-                        <option value={activeTripId || ""}>{activeTrip?.title || activeTrip?.name || "New Trip"}</option>
-                      )}
-                    </select>
-                    <div className="absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none opacity-50 group-hover:opacity-100 group-hover:text-sky-600 transition-all">
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
-                    </div>
+                  {/* Current Trip Display */}
+                  <div className="flex items-center gap-1.5 px-0.5 py-0.5">
+                    <span className="text-slate-400 text-[10px] font-black uppercase tracking-[0.2em]">
+                      {"(" + (activeTrip?.title || activeTrip?.name || "New Trip") + ")"}
+                    </span>
                   </div>
                 </div>
 
