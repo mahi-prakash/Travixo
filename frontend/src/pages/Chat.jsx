@@ -128,7 +128,7 @@ export default function Chat() {
   const [isFetchingPlaces, setIsFetchingPlaces] = useState(false);
   const [placesError, setPlacesError] = useState(null);
 
-  const fetchTopAttractions = (dest) => {
+  const fetchTopAttractions = async (dest) => {
     if (!window.google || !isLoaded || !dest) {
       setPlacesError("Google Maps API not loaded yet.");
       return;
@@ -141,27 +141,38 @@ export default function Chat() {
         throw new Error("Places library missing.");
       }
       
-      const dummyElement = document.createElement('div');
-      const map = new window.google.maps.Map(dummyElement);
-      const service = new window.google.maps.places.PlacesService(map);
-      
+      // Ensure the new Place class is loaded
+      let PlaceClass = window.google.maps.places.Place;
+      if (!PlaceClass && window.google.maps.importLibrary) {
+        const placesLib = await window.google.maps.importLibrary("places");
+        PlaceClass = placesLib.Place;
+      }
+      if (!PlaceClass) {
+        throw new Error("New Google Maps Place API is not available.");
+      }
+
       const request = {
-        query: `top tourist attractions in ${dest}`,
+        textQuery: `top tourist attractions in ${dest}`,
+        fields: ['displayName', 'id'],
       };
 
-      service.textSearch(request, (results, status) => {
-        setIsFetchingPlaces(false);
-        if (status === window.google.maps.places.PlacesServiceStatus.OK && results) {
-          setTopAttractions(results.slice(0, 10)); // Top 10
-        } else {
-          setPlacesError(`No places found or API error (${status}).`);
-          console.error("Places API Error:", status);
-        }
-      });
+      const { places } = await PlaceClass.searchByText(request);
+      
+      if (places && places.length > 0) {
+        // Map to match the previous structure
+        const formattedPlaces = places.slice(0, 10).map(p => ({
+          name: p.displayName,
+          place_id: p.id
+        }));
+        setTopAttractions(formattedPlaces);
+      } else {
+        setPlacesError(`No places found.`);
+      }
     } catch (err) {
-      console.error(err);
+      console.error("Places API Error:", err);
+      setPlacesError(err.message || "Failed to fetch places.");
+    } finally {
       setIsFetchingPlaces(false);
-      setPlacesError(err.message);
     }
   };
 
