@@ -1,9 +1,5 @@
 const GOOGLE_MAPS_KEYS = [
-  import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
-  import.meta.env.VITE_GOOGLE_MAPS_API_KEY_1,
-  import.meta.env.VITE_GOOGLE_MAPS_API_KEY_2,
   import.meta.env.VITE_GOOGLE_MAPS_API_KEY_3,
-  import.meta.env.VITE_GOOGLE_MAPS_API_KEY_4,
 ].filter(key => key && key.trim() !== "");
 
 // We pick one key per session to ensure consistency and avoid multiple script loads
