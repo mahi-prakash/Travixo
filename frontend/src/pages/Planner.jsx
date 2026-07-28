@@ -358,8 +358,14 @@ export default function Planner() {
           const itemB = items[i + 1];
           const key = `${itemA.id}_${itemB.id}`;
 
+          const latA = itemA.coords?.[0] ?? itemA.lat ?? itemA.location?.lat;
+          const lngA = itemA.coords?.[1] ?? itemA.lng ?? itemA.location?.lng;
+          
+          const latB = itemB.coords?.[0] ?? itemB.lat ?? itemB.location?.lat;
+          const lngB = itemB.coords?.[1] ?? itemB.lng ?? itemB.location?.lng;
+
           // Skip if already fetched or missing coordinates
-          if (newLogistics[key] || !itemA.coords || !itemB.coords) continue;
+          if (newLogistics[key] || !latA || !lngA || !latB || !lngB) continue;
 
           try {
             const res = await fetch(`${API_BASE}/logistics/calculate`, {
@@ -367,8 +373,8 @@ export default function Planner() {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 coordinates: [
-                  [itemA.coords[1], itemA.coords[0]], // OSRM expects [lng, lat]
-                  [itemB.coords[1], itemB.coords[0]]
+                  [lngA, latA], // OSRM expects [lng, lat]
+                  [lngB, latB]
                 ]
               })
             });
