@@ -58,6 +58,8 @@ import Dropdown from '../components/common/Dropdown';
 import SEO from '../components/common/SEO';
 import { GOOGLE_MAPS_API_KEY } from '../utils/googleMaps';
 
+const googleLibraries = ['places'];
+
 const containerStyle = {
   width: "100%",
   height: "100%",
@@ -272,7 +274,7 @@ export default function Planner() {
   const { isLoaded, loadError } = useJsApiLoader({
     id: 'google-map-script',
     googleMapsApiKey: GOOGLE_MAPS_API_KEY,
-    libraries: ['places']
+    libraries: googleLibraries
   });
 
   const [mapAuthFailed, setMapAuthFailed] = useState(false);
