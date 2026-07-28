@@ -8,6 +8,7 @@ const { globalLimiter } = require('./middlewares/rateLimit.middleware');
 // Routes
 const messageRoutes = require('./routes/messages.routes.js');
 const reviewRoutes = require('./routes/reviews.routes.js');
+const logisticsRoutes = require('./routes/logistics.routes.js');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -30,6 +31,7 @@ app.use(globalLimiter); //it's work is to stop the spamming or DDOS attacks on t
 
 app.use('/api/messages', messageRoutes);
 app.use('/api/reviews', reviewRoutes);
+app.use('/api/logistics', logisticsRoutes);
 
 // Health Check / Root
 app.get('/', (req, res) => {

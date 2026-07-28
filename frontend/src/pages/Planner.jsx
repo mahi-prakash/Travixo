@@ -340,6 +340,59 @@ export default function Planner() {
   const [isCompleted, setIsCompleted] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [logistics, setLogistics] = useState({});
+
+  // 🚗 Fetch Logistics (Distances & Times)
+  useEffect(() => {
+    const fetchLogistics = async () => {
+      // Collect sequential coordinate pairs for each day
+      const newLogistics = { ...logistics };
+      let updated = false;
+
+      const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+
+      for (const dayId of Object.keys(days)) {
+        const items = days[dayId]?.items || [];
+        for (let i = 0; i < items.length - 1; i++) {
+          const itemA = items[i];
+          const itemB = items[i + 1];
+          const key = `${itemA.id}_${itemB.id}`;
+
+          // Skip if already fetched or missing coordinates
+          if (newLogistics[key] || !itemA.coords || !itemB.coords) continue;
+
+          try {
+            const res = await fetch(`${API_BASE}/logistics/calculate`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                coordinates: [
+                  [itemA.coords[1], itemA.coords[0]], // OSRM expects [lng, lat]
+                  [itemB.coords[1], itemB.coords[0]]
+                ]
+              })
+            });
+            const data = await res.json();
+            if (data.results && data.results.length > 0) {
+              newLogistics[key] = data.results[0];
+              updated = true;
+            }
+          } catch (err) {
+            console.error('Failed to fetch logistics for', key, err);
+          }
+        }
+      }
+
+      if (updated) {
+        setLogistics(newLogistics);
+      }
+    };
+
+    if (Object.keys(days).length > 0) {
+      fetchLogistics();
+    }
+  }, [days]);
+
   // 🚨 PROTECT AGAINST TAB CLOSE (Native popup)
   useEffect(() => {
     const handleBeforeUnload = (e) => {
@@ -1223,6 +1276,8 @@ export default function Planner() {
                                 {day.items?.map((item, index) => {
                                   const isLastInDay = index === (day.items?.length || 1) - 1;
                                   const isLastDay = dayId === displayDayOrder[displayDayOrder.length - 1];
+                                  const nextItem = !isLastInDay ? day.items[index + 1] : null;
+                                  const logisticsData = nextItem ? logistics[`${item.id}_${nextItem.id}`] : null;
                                   const Icon = getItemIcon(item.type?.toLowerCase());
 
                                   return (
@@ -1240,7 +1295,14 @@ export default function Planner() {
                                               <Icon size={10} className="text-sky-600" />
                                             </div>
                                             {(!isLastInDay || !isLastDay) && (
-                                              <div className="flex-1 w-px border-l-2 border-dotted border-sky-300 mt-1" />
+                                              <div className="flex-1 relative flex justify-center mt-1 w-full min-h-[40px]">
+                                                <div className="w-px h-full border-l-2 border-dotted border-sky-300 absolute left-1/2 -translate-x-1/2" />
+                                                {logisticsData && (
+                                                  <div className="absolute top-1/2 -translate-y-1/2 bg-white border border-sky-200 text-sky-600 text-[9px] px-2 py-0.5 rounded-full flex items-center shadow-sm whitespace-nowrap z-10 font-bold tracking-tight">
+                                                    🚙 {logisticsData.duration}m ({logisticsData.distance}km)
+                                                  </div>
+                                                )}
+                                              </div>
                                             )}
                                           </div>
 
