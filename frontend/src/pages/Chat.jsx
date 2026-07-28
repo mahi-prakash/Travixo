@@ -27,6 +27,7 @@ import { supabase } from "../utils/supabase";
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
 // ─── Dynamic Nearby places from Google ──────────────────────────────────────
+const googleLibraries = ['places'];
 
 export default function Chat() {
   const navigate = useNavigate();
@@ -92,7 +93,7 @@ export default function Chat() {
   const { isLoaded, loadError } = useJsApiLoader({
     id: 'google-map-script',
     googleMapsApiKey: GOOGLE_MAPS_API_KEY,
-    libraries: ['places']
+    libraries: googleLibraries
   });
 
 
@@ -125,25 +126,43 @@ export default function Chat() {
   // ── Must-Visit Places Feature ───────────────────────────────────────────
   const [topAttractions, setTopAttractions] = useState([]);
   const [isFetchingPlaces, setIsFetchingPlaces] = useState(false);
+  const [placesError, setPlacesError] = useState(null);
 
   const fetchTopAttractions = (dest) => {
-    if (!window.google || !isLoaded || !dest) return;
+    if (!window.google || !isLoaded || !dest) {
+      setPlacesError("Google Maps API not loaded yet.");
+      return;
+    }
     setIsFetchingPlaces(true);
+    setPlacesError(null);
     
-    const map = new window.google.maps.Map(document.createElement('div'));
-    const service = new window.google.maps.places.PlacesService(map);
-    
-    const request = {
-      query: `top tourist attractions in ${dest}`,
-      fields: ['name', 'place_id']
-    };
-
-    service.textSearch(request, (results, status) => {
-      setIsFetchingPlaces(false);
-      if (status === window.google.maps.places.PlacesServiceStatus.OK && results) {
-        setTopAttractions(results.slice(0, 10)); // Top 10
+    try {
+      if (!window.google.maps.places) {
+        throw new Error("Places library missing.");
       }
-    });
+      
+      const dummyElement = document.createElement('div');
+      const map = new window.google.maps.Map(dummyElement);
+      const service = new window.google.maps.places.PlacesService(map);
+      
+      const request = {
+        query: `top tourist attractions in ${dest}`,
+      };
+
+      service.textSearch(request, (results, status) => {
+        setIsFetchingPlaces(false);
+        if (status === window.google.maps.places.PlacesServiceStatus.OK && results) {
+          setTopAttractions(results.slice(0, 10)); // Top 10
+        } else {
+          setPlacesError(`No places found or API error (${status}).`);
+          console.error("Places API Error:", status);
+        }
+      });
+    } catch (err) {
+      console.error(err);
+      setIsFetchingPlaces(false);
+      setPlacesError(err.message);
+    }
   };
 
   // ── Reset UI state when trip changes ──────────────────────────────────────
@@ -988,6 +1007,7 @@ export default function Chat() {
                             </div>
                             
                             {isFetchingPlaces && <p className="text-xs text-slate-500 italic">Finding top spots...</p>}
+                            {placesError && <p className="text-xs text-red-500">{placesError}</p>}
                             
                             {!isFetchingPlaces && topAttractions.length > 0 && (
                               <div className="flex flex-wrap gap-2 mt-2 max-h-32 overflow-y-auto no-scrollbar pb-1">
