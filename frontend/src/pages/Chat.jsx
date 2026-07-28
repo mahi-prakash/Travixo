@@ -11,7 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronRight, ChevronLeft, ChevronDown, Edit3, Trash2, Star } from "lucide-react";
+import { ChevronRight, ChevronLeft, ChevronDown, Edit3, Trash2, Star, Check } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import CircleLogo from "../pages/CircleLogo.png";
@@ -105,6 +105,7 @@ export default function Chat() {
     tripName: "",
     origin: "",
     destination: "",
+    mustVisitPlaces: [],
     days: "",
     transportBooked: null,
     arrivalStation: "",
@@ -120,6 +121,30 @@ export default function Chat() {
   });
 
   const messagesEndRef = useRef(null);
+
+  // ── Must-Visit Places Feature ───────────────────────────────────────────
+  const [topAttractions, setTopAttractions] = useState([]);
+  const [isFetchingPlaces, setIsFetchingPlaces] = useState(false);
+
+  const fetchTopAttractions = (dest) => {
+    if (!window.google || !isLoaded || !dest) return;
+    setIsFetchingPlaces(true);
+    
+    const map = new window.google.maps.Map(document.createElement('div'));
+    const service = new window.google.maps.places.PlacesService(map);
+    
+    const request = {
+      query: `top tourist attractions in ${dest}`,
+      fields: ['name', 'place_id']
+    };
+
+    service.textSearch(request, (results, status) => {
+      setIsFetchingPlaces(false);
+      if (status === window.google.maps.places.PlacesServiceStatus.OK && results) {
+        setTopAttractions(results.slice(0, 10)); // Top 10
+      }
+    });
+  };
 
   // ── Reset UI state when trip changes ──────────────────────────────────────
   useEffect(() => {
@@ -757,7 +782,11 @@ export default function Chat() {
           finalDays = Math.floor(Math.random() * 8) + 3; // 3 to 10 days
         }
 
-        const prompt = `Plan a ${finalDays} day trip to ${destination} for ${people} with a ${budget} budget (${vibe} vibe). Origin: ${origin || 'Unknown'}. Arrival Station: ${arrivalStation || 'Unknown'} at ${arrivalTime || 'Unknown time'}. Departure Station: ${departureStation || 'Unknown'} at ${departureTime || 'Unknown time'}. Hotel Address: ${hotelAddress || 'Unknown'}. Mention it's for ${userName}. Start with a friendly summary acknowledging these details.`;
+        const mustVisitText = onboardingData.mustVisitPlaces && onboardingData.mustVisitPlaces.length > 0 
+          ? ` Must visit places: ${onboardingData.mustVisitPlaces.join(', ')}.` 
+          : '';
+
+        const prompt = `Plan a ${finalDays} day trip to ${destination} for ${people} with a ${budget} budget (${vibe} vibe). Origin: ${origin || 'Unknown'}. Arrival Station: ${arrivalStation || 'Unknown'} at ${arrivalTime || 'Unknown time'}. Departure Station: ${departureStation || 'Unknown'} at ${departureTime || 'Unknown time'}. Hotel Address: ${hotelAddress || 'Unknown'}.${mustVisitText} Mention it's for ${userName}. Start with a friendly summary acknowledging these details.`;
         // Small timeout to let the Context update and UI switch
         setTimeout(() => sendMessage(prompt, newTrip.id), 600);
       }
@@ -950,6 +979,39 @@ export default function Chat() {
                           <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Destination</label>
                           <input autoFocus value={onboardingData.destination} onChange={(e) => setOnboardingData({ ...onboardingData, destination: e.target.value })} placeholder="e.g. Puri, Odisha" className="w-full mt-1 px-4 py-2.5 bg-slate-100/50 border-2 border-transparent focus:border-sky-600 rounded-xl outline-none text-sm transition" />
                         </div>
+
+                        {onboardingData.destination && onboardingData.destination.length > 2 && (
+                          <div className="mt-2 p-3 bg-slate-50 border border-slate-100 rounded-xl">
+                            <div className="flex justify-between items-center mb-2">
+                              <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Must-Visit Places (Optional)</label>
+                              <button onClick={() => fetchTopAttractions(onboardingData.destination)} className="text-[10px] text-sky-600 font-bold bg-sky-100 px-2 py-1 rounded-md hover:bg-sky-200 transition">Fetch Top Places</button>
+                            </div>
+                            
+                            {isFetchingPlaces && <p className="text-xs text-slate-500 italic">Finding top spots...</p>}
+                            
+                            {!isFetchingPlaces && topAttractions.length > 0 && (
+                              <div className="flex flex-wrap gap-2 mt-2 max-h-32 overflow-y-auto no-scrollbar pb-1">
+                                {topAttractions.map((place) => {
+                                  const isSelected = onboardingData.mustVisitPlaces.includes(place.name);
+                                  return (
+                                    <button
+                                      key={place.place_id}
+                                      onClick={() => {
+                                        const newPlaces = isSelected 
+                                          ? onboardingData.mustVisitPlaces.filter(p => p !== place.name)
+                                          : [...onboardingData.mustVisitPlaces, place.name];
+                                        setOnboardingData({ ...onboardingData, mustVisitPlaces: newPlaces });
+                                      }}
+                                      className={`text-xs px-3 py-1.5 rounded-full border transition-all ${isSelected ? 'bg-sky-600 border-sky-600 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-600 hover:border-sky-300'}`}
+                                    >
+                                      {place.name} {isSelected && <Check size={12} className="inline ml-1" />}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )}
 
                         {!onboardingData.isExploring && (
                           <>
