@@ -1,4 +1,5 @@
 const logger = require('../utils/logger');
+const { fetchGooglePlacesPool } = require('./places.service');
 
 // ─── 1. Wikipedia Fetcher ────────────────────────────────────────────────────
 const fetchWikipediaContext = async (destination) => {
@@ -114,7 +115,8 @@ const fetchFullDestinationContext = async (destination, origin, arrivalStation, 
     fetchWikipediaContext(destination),
     fetchLiveWeather(destination),
     fetchRedditTips(destination),
-    fetchDistanceContext(arrivalStation, hotelAddress)
+    fetchDistanceContext(arrivalStation, hotelAddress),
+    fetchGooglePlacesPool(destination)
   ]);
 
   // Extract successful strings and filter out empties

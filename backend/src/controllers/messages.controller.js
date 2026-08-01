@@ -1,7 +1,9 @@
 const logger = require('../utils/logger');
-const { generateAiResponse } = require('../services/ai.service.js');
-const { fetchFullDestinationContext } = require('../services/rag.service.js');
 const { getTravelPlannerPrompt } = require('../config/prompts.js');
+const { fetchFullDestinationContext } = require('../services/rag.service.js');
+const { generateAiResponse } = require('../services/ai.service.js');
+const { verifyPlacesWithGoogle } = require('../services/places.service.js');
+const { clusterPlacesIntoDays } = require('../services/clustering.service.js');
 
 /**
  * Controller to handle AI chat messages
@@ -30,7 +32,7 @@ const sendMessage = async (req, res, next) => {
         days.forEach((day, idx) => {
           const dayId = day.id || `day-${day.day || idx + 1}`;
           skeletonMap[dayId] = (day.activities || day.items || []).map(item => ({
-            title: item.title || item.name,
+            title: item.title,
             time: item.time
           }));
         });
@@ -49,8 +51,8 @@ const sendMessage = async (req, res, next) => {
       { role: 'system', content: systemPrompt },
       ...recentHistory.map(msg => ({
         role: msg.role === 'assistant' ? 'assistant' : 'user',
-        // Omit heavy itinerary data from history to save tokens and truncate content
-        content: (msg.content || "").replace(/\[ITINERARY\][\s\S]*?\[\/ITINERARY\]/gi, ' (Itinerary data omitted) ').substring(0, 1000)
+        // Omit heavy data from history to save tokens and truncate content
+        content: (msg.content || "").replace(/\[ITINERARY\][\s\S]*?\[\/ITINERARY\]/gi, ' (Data omitted) ').substring(0, 1000)
       })),
       { role: 'user', content }
     ];
@@ -66,9 +68,77 @@ const sendMessage = async (req, res, next) => {
     }
 
     // 3. Call the AI Service
-    const aiReply = await generateAiResponse(chatMessages);
+    let aiReply = await generateAiResponse(chatMessages);
 
-    // 4. Send response
+    // 4. Extract [ITINERARY] and verify activities against Google Maps Ground Truth
+    const itineraryMatch = aiReply.match(/\[ITINERARY\]([\s\S]*?)\[\/ITINERARY\]/i);
+    if (itineraryMatch) {
+      try {
+        const itineraryJson = JSON.parse(itineraryMatch[1]);
+        const rawDays = itineraryJson.days || {};
+        const isArray = Array.isArray(rawDays);
+        const dayEntries = isArray ? rawDays.map((d, i) => [i, d]) : Object.entries(rawDays);
+
+        const verifiedDayEntries = await Promise.all(
+          dayEntries.map(async ([key, day]) => {
+            const rawItems = day.items || day.activities || [];
+            // Run Google verification for all places scheduled on this day
+            const verifiedItems = await verifyPlacesWithGoogle(rawItems, destination);
+
+            // Merge AI's smart schedule with Google's verified coords and location (defaulting to raw item if unverified)
+            const finalItems = rawItems.map((original, index) => {
+              const verified = verifiedItems[index] || original;
+              const titleOrName = verified.title || verified.name || original.title || original.name || "Scheduled Activity";
+              return {
+                ...original,
+                ...verified,
+                id: verified.id || original.id || `item-${key}-${index}-${Date.now()}`,
+                name: titleOrName,
+                title: titleOrName,
+                time: original.time || verified.time || "10:00 AM",
+                desc: original.desc || verified.desc || "Recommended experience",
+                type: original.type || verified.type || "SIGHTSEEING",
+                location: verified.location || original.location || original.desc || destination,
+                estimated_cost: original.estimated_cost || verified.estimated_cost || "₹500",
+                suggested_duration: original.suggested_duration || verified.suggested_duration || "1.5h",
+                img: '' // Force Unsplash photo fetch on frontend
+              };
+            });
+
+            return [
+              key,
+              {
+                ...day,
+                items: finalItems,
+                activities: finalItems
+              }
+            ];
+          })
+        );
+
+        const finalDays = isArray
+          ? verifiedDayEntries.map(e => e[1])
+          : Object.fromEntries(verifiedDayEntries);
+
+        const verifiedItinerary = {
+          ...itineraryJson,
+          destination: destination,
+          days: finalDays
+        };
+
+        // Replace the unverified itinerary with our Google-grounded version
+        aiReply = aiReply.replace(
+          /\[ITINERARY\][\s\S]*?\[\/ITINERARY\]/i,
+          `[ITINERARY]\n${JSON.stringify(verifiedItinerary, null, 2)}\n[/ITINERARY]`
+        );
+
+      } catch (err) {
+        console.error("Error processing and verifying itinerary:", err);
+        // Fall back to original AI reply if parsing fails
+      }
+    }
+
+    // 5. Send response
     res.status(200).json({ reply: aiReply });
 
   } catch (error) {

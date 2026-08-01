@@ -11,7 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronRight, ChevronLeft, ChevronDown, Edit3, Trash2, Star, Check } from "lucide-react";
+import { ChevronRight, ChevronLeft, ChevronDown, Edit3, Trash2, Star, Check, Calendar } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import CircleLogo from "../pages/CircleLogo.png";
@@ -28,6 +28,48 @@ const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
 // ─── Dynamic Nearby places from Google ──────────────────────────────────────
 const googleLibraries = ['places'];
+
+// ─── Custom Split Input for Date & Time ─────────────────────────────────────
+function DateTimeSplitInput({ value, onChange }) {
+  const [dateVal, timeVal] = value ? value.split("T") : ["", ""];
+
+  const handleDateChange = (newDate) => {
+    const timeToUse = timeVal || "10:00";
+    onChange(newDate ? `${newDate}T${timeToUse}` : "");
+  };
+
+  const handleTimeChange = (newTime) => {
+    const dateToUse = dateVal || new Date().toISOString().split("T")[0];
+    onChange(`${dateToUse}T${newTime}`);
+  };
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1.5">
+      <div className="relative flex items-center">
+        <div className="absolute left-3.5 flex items-center pointer-events-none text-sky-600">
+          <Calendar className="w-4 h-4" />
+        </div>
+        <input
+          type="date"
+          value={dateVal || ""}
+          onChange={(e) => handleDateChange(e.target.value)}
+          className="w-full pl-10 pr-3 py-2.5 bg-slate-100/50 border-2 focus:bg-white focus:border-sky-600 rounded-xl outline-none text-sm text-slate-800 font-semibold transition cursor-pointer"
+        />
+      </div>
+      <div className="relative flex items-center">
+        <div className="absolute left-3.5 flex items-center pointer-events-none text-sky-600">
+          <Clock className="w-4 h-4" />
+        </div>
+        <input
+          type="time"
+          value={timeVal || ""}
+          onChange={(e) => handleTimeChange(e.target.value)}
+          className="w-full pl-10 pr-3 py-2.5 bg-slate-100/50 border-2 focus:bg-white focus:border-sky-600 rounded-xl outline-none text-sm text-slate-800 font-semibold transition cursor-pointer"
+        />
+      </div>
+    </div>
+  );
+}
 
 export default function Chat() {
   const navigate = useNavigate();
@@ -135,12 +177,12 @@ export default function Chat() {
     }
     setIsFetchingPlaces(true);
     setPlacesError(null);
-    
+
     try {
       if (!window.google.maps.places) {
         throw new Error("Places library missing.");
       }
-      
+
       // Ensure the new Place class is loaded
       let PlaceClass = window.google.maps.places.Place;
       if (!PlaceClass && window.google.maps.importLibrary) {
@@ -157,7 +199,7 @@ export default function Chat() {
       };
 
       const { places } = await PlaceClass.searchByText(request);
-      
+
       if (places && places.length > 0) {
         // Map to match the previous structure
         const formattedPlaces = places.slice(0, 10).map(p => ({
@@ -363,7 +405,7 @@ export default function Chat() {
             };
           }),
         );
-        return [dayKey, { ...day, activities: enhancedActivities }];
+        return [dayKey, { ...day, items: enhancedActivities, activities: enhancedActivities }];
       }),
     );
 
@@ -607,7 +649,7 @@ export default function Chat() {
             parsedItinerary = await enhanceItineraryWithImages(raw);
           }
           cleanReply = reply.replace(/\[ITINERARY\][\s\S]*?\[\/ITINERARY\]/gi, "").trim();
-        } 
+        }
         else {
           // Fallback legacy greedy parser for full itineraries if tags are missing
           const first = reply.indexOf("{");
@@ -669,11 +711,11 @@ export default function Chat() {
       if (parsedItinerary) {
         // Save the main editable itinerary
         setItinerary(tripId, parsedItinerary);
-        
+
         // 🛡️ If this trip doesn't have a permanent AI Plan yet, save it to the dedicated db column!
         const existingAiPlan = (aiItineraryCache || {})[tripId];
         if (!existingAiPlan) {
-           updateAiItinerary(tripId, parsedItinerary);
+          updateAiItinerary(tripId, parsedItinerary);
         }
       }
 
@@ -812,8 +854,8 @@ export default function Chat() {
           finalDays = Math.floor(Math.random() * 8) + 3; // 3 to 10 days
         }
 
-        const mustVisitText = onboardingData.mustVisitPlaces && onboardingData.mustVisitPlaces.length > 0 
-          ? ` Must visit places: ${onboardingData.mustVisitPlaces.join(', ')}.` 
+        const mustVisitText = onboardingData.mustVisitPlaces && onboardingData.mustVisitPlaces.length > 0
+          ? ` Must visit places: ${onboardingData.mustVisitPlaces.join(', ')}.`
           : '';
 
         const prompt = `Plan a ${finalDays} day trip to ${destination} for ${people} with a ${budget} budget (${vibe} vibe). Origin: ${origin || 'Unknown'}. Arrival Station: ${arrivalStation || 'Unknown'} at ${arrivalTime || 'Unknown time'}. Departure Station: ${departureStation || 'Unknown'} at ${departureTime || 'Unknown time'}. Hotel Address: ${hotelAddress || 'Unknown'}.${mustVisitText} Mention it's for ${userName}. Start with a friendly summary acknowledging these details.`;
@@ -1016,26 +1058,27 @@ export default function Chat() {
                               <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Must-Visit Places (Optional)</label>
                               <button onClick={() => fetchTopAttractions(onboardingData.destination)} className="text-[10px] text-sky-600 font-bold bg-sky-100 px-2 py-1 rounded-md hover:bg-sky-200 transition">Fetch Top Places</button>
                             </div>
-                            
+
                             {isFetchingPlaces && <p className="text-xs text-slate-500 italic">Finding top spots...</p>}
                             {placesError && <p className="text-xs text-red-500">{placesError}</p>}
-                            
+
                             {!isFetchingPlaces && topAttractions.length > 0 && (
                               <div className="flex flex-wrap gap-2 mt-2 max-h-32 overflow-y-auto no-scrollbar pb-1">
                                 {topAttractions.map((place) => {
-                                  const isSelected = onboardingData.mustVisitPlaces.includes(place.name);
+                                  const mustVisit = onboardingData.mustVisitPlaces || [];
+                                  const isSelected = mustVisit.includes(place.name);
                                   return (
                                     <button
                                       key={place.place_id}
                                       onClick={() => {
-                                        const newPlaces = isSelected 
-                                          ? onboardingData.mustVisitPlaces.filter(p => p !== place.name)
-                                          : [...onboardingData.mustVisitPlaces, place.name];
+                                        const newPlaces = isSelected
+                                          ? mustVisit.filter(p => p !== place.name)
+                                          : [...mustVisit, place.name];
                                         setOnboardingData({ ...onboardingData, mustVisitPlaces: newPlaces });
                                       }}
                                       className={`text-xs px-3 py-1.5 rounded-full border transition-all ${isSelected ? 'bg-sky-600 border-sky-600 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-600 hover:border-sky-300'}`}
                                     >
-                                      {place.name} {isSelected && <Check size={12} className="inline ml-1" />}
+                                      {place.name} {isSelected}
                                     </button>
                                   );
                                 })}
@@ -1088,7 +1131,7 @@ export default function Chat() {
                           </div>
                           <div>
                             <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Approximate Arrival Date & Time</label>
-                            <input type="datetime-local" value={onboardingData.arrivalTime} onChange={(e) => setOnboardingData({ ...onboardingData, arrivalTime: e.target.value })} className="w-full mt-1 px-4 py-2.5 bg-slate-100/50 border-2 focus:border-sky-600 rounded-xl outline-none text-sm transition" />
+                            <DateTimeSplitInput value={onboardingData.arrivalTime} onChange={(val) => setOnboardingData({ ...onboardingData, arrivalTime: val })} />
                           </div>
                         </div>
                       )}
@@ -1100,7 +1143,7 @@ export default function Chat() {
                           </div>
                           <div>
                             <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Expected Arrival Date & Time</label>
-                            <input type="datetime-local" value={onboardingData.arrivalTime} onChange={(e) => setOnboardingData({ ...onboardingData, arrivalTime: e.target.value })} className="w-full mt-1 px-4 py-2.5 bg-slate-100/50 border-2 focus:border-sky-600 rounded-xl outline-none text-sm transition" />
+                            <DateTimeSplitInput value={onboardingData.arrivalTime} onChange={(val) => setOnboardingData({ ...onboardingData, arrivalTime: val })} />
                           </div>
                         </div>
                       )}
@@ -1167,7 +1210,7 @@ export default function Chat() {
                           </div>
                           <div>
                             <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Approximate Departure Date & Time</label>
-                            <input type="datetime-local" value={onboardingData.departureTime} onChange={(e) => setOnboardingData({ ...onboardingData, departureTime: e.target.value })} className="w-full mt-1 px-4 py-2.5 bg-slate-100/50 border-2 focus:border-sky-600 rounded-xl outline-none text-sm transition" />
+                            <DateTimeSplitInput value={onboardingData.departureTime} onChange={(val) => setOnboardingData({ ...onboardingData, departureTime: val })} />
                           </div>
                         </div>
                       )}
@@ -1547,20 +1590,20 @@ export default function Chat() {
                                       >
                                         <div className="flex-1">
                                           <div className="flex items-center gap-2 text-[13px] text-sky-600 font-bold uppercase tracking-wide">
-                                            <Icon size={12} /> {activity.time} •{" "}
-                                            {activity.type}
+                                            <Icon size={12} /> {activity.time || "10:00 AM"} •{" "}
+                                            {activity.type || "SIGHTSEEING"}
                                           </div>
                                           <div className="font-bold text-[15px] text-slate-900 mt-1">
-                                            {activity.title}
+                                            {activity.title || activity.name || "Must-See Place"}
                                           </div>
                                           <div className="text-[11px] text-slate-400 mt-0.5">
-                                            {activity.location}
+                                            {activity.location || activity.desc || "Destination Area"}
                                           </div>
                                         </div>
                                         {activity.img && (
                                           <img
                                             src={activity.img}
-                                            alt={activity.title}
+                                            alt={activity.title || activity.name}
                                             className="h-14 w-14 rounded-xl object-cover shadow-lg ring-4 ring-white translate-y-[-2px]"
                                           />
                                         )}

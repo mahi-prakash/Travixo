@@ -39,7 +39,9 @@ import {
   Check,
   RotateCcw,
   Undo2,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Hotel,
+  Train
 } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import {
@@ -48,7 +50,8 @@ import {
   MarkerF,
   Polyline,
   InfoWindowF,
-  DirectionsRenderer
+  DirectionsRenderer,
+  Autocomplete
 } from "@react-google-maps/api";
 
 import { motion, AnimatePresence } from 'framer-motion';
@@ -329,6 +332,7 @@ export default function Planner() {
   const aiNearbyPlaces = activeItinerary.nearby_places || aiSourceForNearby?.nearby_places || [];
 
   const [days, setDays] = useState({});
+  const [placePool, setPlacePool] = useState([]); // Drafts / Unassigned places
   const [planMode, setPlanMode] = useState("user");
   const [selectedDayId, setSelectedDayId] = useState("all");
   const [activeTab, setActiveTab] = useState("nearby");
@@ -343,6 +347,10 @@ export default function Planner() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [logistics, setLogistics] = useState({});
+  const [baseCampMode, setBaseCampMode] = useState(null);
+  const [baseCampHotel, setBaseCampHotel] = useState(null);
+  const [baseCampStation, setBaseCampStation] = useState(null);
+  const autocompleteRef = useRef(null);
 
   // 🚗 Fetch Logistics (Distances & Times)
   useEffect(() => {
@@ -354,10 +362,17 @@ export default function Planner() {
       const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
       for (const dayId of Object.keys(days)) {
-        const items = days[dayId]?.items || [];
-        for (let i = 0; i < items.length - 1; i++) {
-          const itemA = items[i];
-          const itemB = items[i + 1];
+        const rawItems = days[dayId]?.items || [];
+        // Inject Hotel at start and end of the day if it exists
+        const routingItems = [...rawItems];
+        if (baseCampHotel && routingItems.length > 0) {
+          routingItems.unshift({ ...baseCampHotel, id: `basecamp-start-${dayId}` });
+          routingItems.push({ ...baseCampHotel, id: `basecamp-end-${dayId}` });
+        }
+        
+        for (let i = 0; i < routingItems.length - 1; i++) {
+          const itemA = routingItems[i];
+          const itemB = routingItems[i + 1];
           const key = `${itemA.id}_${itemB.id}`;
 
           const latA = itemA.coords?.[0] ?? itemA.lat ?? itemA.location?.lat;
@@ -396,10 +411,41 @@ export default function Planner() {
       }
     };
 
-    if (Object.keys(days).length > 0) {
-      fetchLogistics();
+    const timer = setTimeout(() => {
+      if (Object.keys(days).length > 0) {
+        fetchLogistics();
+      }
+    }, 600); // 🛡️ Debounce 600ms so rapid dragging doesn't flood the routing engine
+
+    return () => clearTimeout(timer);
+  }, [days, baseCampHotel]);
+
+  const handleBaseCampLoad = (autocomplete) => {
+    autocompleteRef.current = autocomplete;
+  };
+
+  const handleBaseCampPlaceChanged = () => {
+    if (autocompleteRef.current !== null) {
+      const place = autocompleteRef.current.getPlace();
+      if (!place.geometry) return;
+
+      const newBaseCamp = {
+        id: place.place_id,
+        name: place.name,
+        lat: place.geometry.location.lat(),
+        lng: place.geometry.location.lng(),
+        type: baseCampMode
+      };
+
+      if (baseCampMode === 'hotel') {
+        setBaseCampHotel(newBaseCamp);
+      } else if (baseCampMode === 'station') {
+        setBaseCampStation(newBaseCamp);
+      }
+      setBaseCampMode(null);
+      setBaseCampSearch('');
     }
-  }, [days]);
+  };
 
   // 🚨 PROTECT AGAINST TAB CLOSE (Native popup)
   useEffect(() => {
@@ -625,6 +671,51 @@ export default function Planner() {
     if (source.droppableId === destination.droppableId && source.index === destination.index) return;
 
     pushToHistory();
+    unsavedRef.current = true;
+    setHasUnsavedChanges(true);
+
+    // Case 1: Reordering within Place Pool
+    if (source.droppableId === "place-pool" && destination.droppableId === "place-pool") {
+      const newPool = Array.from(placePool);
+      const [moved] = newPool.splice(source.index, 1);
+      newPool.splice(destination.index, 0, moved);
+      setPlacePool(newPool);
+      return;
+    }
+
+    // Case 2: Moving from Place Pool to a Day
+    if (source.droppableId === "place-pool" && destination.droppableId !== "place-pool") {
+      const newPool = Array.from(placePool);
+      const [moved] = newPool.splice(source.index, 1);
+      
+      const destDay = days[destination.droppableId];
+      const newItems = Array.from(destDay.items || []);
+      newItems.splice(destination.index, 0, moved);
+
+      const newDays = { ...days, [destination.droppableId]: { ...destDay, items: newItems } };
+      setPlacePool(newPool);
+      setDays(newDays);
+      saveItineraryToCache(activeTripId, { days: newDays });
+      return;
+    }
+
+    // Case 3: Moving from a Day to Place Pool
+    if (source.droppableId !== "place-pool" && destination.droppableId === "place-pool") {
+      const sourceDay = days[source.droppableId];
+      const newItems = Array.from(sourceDay.items || []);
+      const [moved] = newItems.splice(source.index, 1);
+
+      const newPool = Array.from(placePool);
+      newPool.splice(destination.index, 0, moved);
+
+      const newDays = { ...days, [source.droppableId]: { ...sourceDay, items: newItems } };
+      setDays(newDays);
+      setPlacePool(newPool);
+      saveItineraryToCache(activeTripId, { days: newDays });
+      return;
+    }
+
+    // Case 4: Moving within the same Day or between two Days (Existing logic)
     if (source.droppableId === destination.droppableId) {
       const day = days[source.droppableId];
       const newItems = Array.from(day.items);
@@ -633,8 +724,6 @@ export default function Planner() {
       const newDays = { ...days, [source.droppableId]: { ...day, items: newItems } };
       setDays(newDays);
       saveItineraryToCache(activeTripId, { days: newDays });
-      unsavedRef.current = true;
-      setHasUnsavedChanges(true);
     } else {
       const sourceDay = days[source.droppableId];
       const destDay = days[destination.droppableId];
@@ -649,8 +738,6 @@ export default function Planner() {
       };
       setDays(newDays);
       saveItineraryToCache(activeTripId, { days: newDays });
-      unsavedRef.current = true;
-      setHasUnsavedChanges(true);
     }
   };
 
@@ -1244,6 +1331,62 @@ export default function Planner() {
                 </div>
               )}
 
+              {/* --- PLACE POOL (DRAFTS) --- */}
+              <div className="mb-8">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-amber-100 text-amber-600">
+                    <Star size={16} />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-slate-800 text-lg tracking-tight">Drafts & Suggestions</h3>
+                    <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Unassigned Places</p>
+                  </div>
+                </div>
+                
+                <Droppable droppableId="place-pool">
+                  {(provided, snapshot) => (
+                    <div
+                      ref={provided.innerRef}
+                      {...provided.droppableProps}
+                      className={`min-h-[100px] p-4 rounded-3xl border-2 border-dashed transition-all ${
+                        snapshot.isDraggingOver ? "bg-amber-50/50 border-amber-300" : "bg-slate-50 border-slate-200"
+                      }`}
+                    >
+                      {placePool.map((item, index) => (
+                        <Draggable
+                          key={item.id}
+                          draggableId={item.id}
+                          index={index}
+                          isDragDisabled={planMode !== "user"}
+                        >
+                          {(provided, snapshot) => (
+                            <div
+                              ref={provided.innerRef}
+                              {...provided.draggableProps}
+                              {...provided.dragHandleProps}
+                              className={`mb-3 last:mb-0 ${snapshot.isDragging ? "opacity-90 scale-[1.02] z-50" : ""}`}
+                            >
+                              <div className="flex bg-white rounded-2xl shadow-sm border border-slate-100 p-3 hover:shadow-md transition-shadow">
+                                  <div className="flex-1">
+                                    <p className="font-bold text-sm text-slate-800">{item.title || item.name}</p>
+                                    <p className="text-xs text-slate-500 line-clamp-1">{item.desc}</p>
+                                  </div>
+                              </div>
+                            </div>
+                          )}
+                        </Draggable>
+                      ))}
+                      {provided.placeholder}
+                      {placePool.length === 0 && (
+                        <div className="text-center text-slate-400 text-xs py-4">
+                          Drag places here to remove them from a day, or see AI suggestions here.
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </Droppable>
+              </div>
+
               {visibleDays.map((dayId, dayIdx) => {
                 const day = displayDays[dayId];
                 if (!day) return null;
@@ -1281,6 +1424,29 @@ export default function Planner() {
                                 className={`transition-all min-h-[10px] pb-1 ${snapshot.isDraggingOver ? "bg-slate-50/50 rounded-3xl ring-2 ring-dashed ring-slate-200" : ""
                                   }`}
                               >
+                                {/* ⛺ Base Camp Morning Start */}
+                                {baseCampHotel && day.items?.length > 0 && (
+                                  <div className="flex gap-4 items-stretch opacity-75">
+                                    <div className="flex flex-col items-center">
+                                      <div className="h-5 w-5 rounded-full border-2 border-slate-300 bg-white flex items-center justify-center shrink-0 mt-4">
+                                        <Hotel size={10} className="text-slate-400" />
+                                      </div>
+                                      <div className="flex-1 relative flex justify-center mt-1 w-full min-h-[40px]">
+                                        <div className="w-px h-full border-l-2 border-dotted border-slate-200 absolute left-1/2 -translate-x-1/2" />
+                                        {logistics[`basecamp-start-${dayId}_${day.items[0].id}`] && (
+                                          <div className="absolute top-1/2 -translate-y-1/2 bg-white border border-slate-200 text-slate-500 text-[9px] px-2 py-0.5 rounded-full flex items-center shadow-sm whitespace-nowrap z-10 font-bold tracking-tight">
+                                            🚙 {logistics[`basecamp-start-${dayId}_${day.items[0].id}`].duration}m
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <div className="flex-1 flex flex-col bg-white rounded-2xl px-6 py-4 border border-slate-100 mb-4 items-start justify-center">
+                                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Morning Start</p>
+                                      <p className="text-sm font-extrabold text-slate-700">{baseCampHotel.name}</p>
+                                    </div>
+                                  </div>
+                                )}
+
                                 {day.items?.map((item, index) => {
                                   const isLastInDay = index === (day.items?.length || 1) - 1;
                                   const isLastDay = dayId === displayDayOrder[displayDayOrder.length - 1];
@@ -1302,14 +1468,23 @@ export default function Planner() {
                                             <div className="h-5 w-5 rounded-full border-2 border-sky-600 bg-sky-50 flex items-center justify-center shrink-0 mt-4">
                                               <Icon size={10} className="text-sky-600" />
                                             </div>
-                                            {(!isLastInDay || !isLastDay) && (
+                                            {(!isLastInDay || (isLastInDay && baseCampHotel)) && (
                                               <div className="flex-1 relative flex justify-center mt-1 w-full min-h-[40px]">
                                                 <div className="w-px h-full border-l-2 border-dotted border-sky-300 absolute left-1/2 -translate-x-1/2" />
-                                                {logisticsData && (
-                                                  <div className="absolute top-1/2 -translate-y-1/2 bg-white border border-sky-200 text-sky-600 text-[9px] px-2 py-0.5 rounded-full flex items-center shadow-sm whitespace-nowrap z-10 font-bold tracking-tight">
-                                                    🚙 {logisticsData.duration}m ({logisticsData.distance}km)
-                                                  </div>
-                                                )}
+                                                
+                                                {/* Logic for connecting to next item OR the evening base camp return */}
+                                                {(() => {
+                                                  const badgeData = isLastInDay && baseCampHotel 
+                                                    ? logistics[`${item.id}_basecamp-end-${dayId}`] 
+                                                    : logisticsData;
+                                                  
+                                                  if (!badgeData) return null;
+                                                  return (
+                                                    <div className="absolute top-1/2 -translate-y-1/2 bg-white border border-sky-200 text-sky-600 text-[9px] px-2 py-0.5 rounded-full flex items-center shadow-sm whitespace-nowrap z-10 font-bold tracking-tight">
+                                                      🚙 {badgeData.duration}m ({badgeData.distance}km)
+                                                    </div>
+                                                  );
+                                                })()}
                                               </div>
                                             )}
                                           </div>
@@ -1447,6 +1622,24 @@ export default function Planner() {
                                   );
                                 })}
                                 {provided.placeholder}
+
+                                {/* ⛺ Base Camp Evening Return */}
+                                {baseCampHotel && day.items?.length > 0 && (
+                                  <div className="flex gap-4 items-stretch opacity-75">
+                                    <div className="flex flex-col items-center">
+                                      <div className="h-5 w-5 rounded-full border-2 border-slate-300 bg-white flex items-center justify-center shrink-0 mt-4">
+                                        <Hotel size={10} className="text-slate-400" />
+                                      </div>
+                                      <div className="flex-1 relative flex justify-center mt-1 w-full min-h-[40px]">
+                                        <div className="w-px h-full border-l-2 border-dotted border-slate-200 absolute left-1/2 -translate-x-1/2" />
+                                      </div>
+                                    </div>
+                                    <div className="flex-1 flex flex-col bg-white rounded-2xl px-6 py-4 border border-slate-100 mb-4 items-start justify-center">
+                                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Evening Return</p>
+                                      <p className="text-sm font-extrabold text-slate-700">{baseCampHotel.name}</p>
+                                    </div>
+                                  </div>
+                                )}
 
                                 {(day.items?.length || 0) === 0 && (
                                   <div
@@ -1727,6 +1920,60 @@ export default function Planner() {
                         <p className="text-sm font-bold text-slate-400">Loading Maps...</p>
                       </div>
                     )}
+
+                    {/* ⛺ BASE CAMP FABS */}
+                    <div className="absolute top-4 left-4 z-[400] flex gap-2">
+                      <button
+                        onClick={() => setBaseCampMode('hotel')}
+                        className={`px-3 py-2 rounded-xl shadow-md font-bold flex items-center gap-2 border transition-all ${baseCampHotel ? 'bg-sky-600 text-white border-sky-700' : 'bg-white text-slate-600 border-slate-100 hover:bg-slate-50'}`}
+                      >
+                        <Hotel size={16} />
+                        <span className="text-xs">{baseCampHotel ? 'Hotel' : 'Add Hotel'}</span>
+                      </button>
+                      <button
+                        onClick={() => setBaseCampMode('station')}
+                        className={`px-3 py-2 rounded-xl shadow-md font-bold flex items-center gap-2 border transition-all ${baseCampStation ? 'bg-indigo-600 text-white border-indigo-700' : 'bg-white text-slate-600 border-slate-100 hover:bg-slate-50'}`}
+                      >
+                        <Train size={16} />
+                        <span className="text-xs">{baseCampStation ? 'Arrival' : 'Add Arrival'}</span>
+                      </button>
+                    </div>
+
+                    {/* ⛺ BASE CAMP POPUP */}
+                    <AnimatePresence>
+                      {baseCampMode && (
+                        <motion.div
+                          initial={{ opacity: 0, y: -10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -10 }}
+                          className="absolute top-16 left-4 right-16 z-[500] bg-white/90 backdrop-blur-md p-4 rounded-2xl shadow-xl border border-white/50 max-w-sm"
+                        >
+                          <div className="flex justify-between items-center mb-2">
+                            <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                              {baseCampMode === 'hotel' ? <Hotel size={16} className="text-sky-600" /> : <Train size={16} className="text-sky-600" />}
+                              Where are you {baseCampMode === 'hotel' ? 'staying' : 'arriving'}?
+                            </h3>
+                            <button onClick={() => setBaseCampMode(null)} className="text-slate-400 hover:text-slate-600">
+                              <Undo2 size={16} />
+                            </button>
+                          </div>
+                          {isLoaded && (
+                            <Autocomplete onLoad={handleBaseCampLoad} onPlaceChanged={handleBaseCampPlaceChanged}>
+                              <input
+                                type="text"
+                                placeholder={`Search for your ${baseCampMode}...`}
+                                value={baseCampSearch}
+                                onChange={(e) => setBaseCampSearch(e.target.value)}
+                                className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium outline-none focus:ring-2 focus:ring-sky-400 transition-all shadow-inner"
+                              />
+                            </Autocomplete>
+                          )}
+                          <p className="text-[10px] text-slate-500 mt-2 font-medium">
+                            Based on your route, we recommend staying centrally to minimize travel.
+                          </p>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
 
                     {/* Map Controls */}
                     <div className="absolute top-4 right-4 z-[400] flex flex-col gap-2">

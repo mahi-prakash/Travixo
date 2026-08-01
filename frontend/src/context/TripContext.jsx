@@ -26,6 +26,40 @@ export const TripProvider = ({ children }) => {
     }
   }, [user]);
 
+  // ⚡ Supabase Realtime Multiplayer Sync
+  useEffect(() => {
+    if (!user) return;
+
+    const subscription = supabase
+      .channel('trips-realtime')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'trips' },
+        (payload) => {
+          const updatedTrip = payload.new;
+          if (!updatedTrip) return;
+
+          console.log('⚡ [Realtime] Trip updated remotely:', updatedTrip.id);
+
+          setTrips((prevTrips) =>
+            prevTrips.map((t) => (t.id === updatedTrip.id ? updatedTrip : t))
+          );
+
+          if (updatedTrip.itinerary) {
+            setItineraryCache((prev) => ({ ...prev, [updatedTrip.id]: updatedTrip.itinerary }));
+          }
+          if (updatedTrip.ai_itinerary) {
+            setAiItineraryCache((prev) => ({ ...prev, [updatedTrip.id]: updatedTrip.ai_itinerary }));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(subscription);
+    };
+  }, [user]);
+
   const fetchTrips = async () => {
     setLoading(true);
     const { data, error } = await supabase
@@ -73,7 +107,7 @@ export const TripProvider = ({ children }) => {
             };
           }),
         );
-        return [dayId, { ...day, activities: enhancedActivities }];
+        return [dayId, { ...day, items: enhancedActivities, activities: enhancedActivities }];
       }),
     );
 
