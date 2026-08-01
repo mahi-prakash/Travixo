@@ -10,8 +10,10 @@ import Dropdown from "../components/common/Dropdown";
 const MainLayout = () => {
   const location = useLocation();
   const path = location.pathname.toLowerCase();
-  const isFullWidthPage = path.startsWith("/chat") || path.startsWith("/planner") || path.startsWith("/profile") || path.startsWith("/bookings") || path.startsWith("/explore");
-  const { user, logout } = useUser();
+  const isFixedPage = path.startsWith("/chat") || path.startsWith("/planner");
+  const isFullWidthPage = isFixedPage || path.startsWith("/profile") || path.startsWith("/bookings") || path.startsWith("/explore");
+  const { user, profile, logout } = useUser();
+  const userAvatar = profile?.avatar_url || user?.user_metadata?.avatar_url || user?.user_metadata?.picture || "https://api.dicebear.com/7.x/avataaars/svg?seed=" + (user?.email || "adventurer");
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const navigate = useNavigate();
 
@@ -23,6 +25,7 @@ const MainLayout = () => {
   const navItems = [
     { to: "/chat", label: "Chat" },
     { to: "/planner", label: "Planner" },
+    { to: "/bookings", label: "Bookings" },
     { to: "/explore", label: "Explore" },
     { to: "/profile", label: "Profile" },
   ];
@@ -111,8 +114,8 @@ const MainLayout = () => {
                 </div>
                 <div className="h-9 w-9 sm:h-10 sm:w-10 rounded-xl bg-slate-100 overflow-hidden ring-2 ring-white shadow-sm group-hover:ring-sky-100 transition-all">
                   <img
-                    src="https://plus.unsplash.com/premium_vector-1728560971513-32c0ac5e2c30?fm=jpg&q=60&w=3000&ixlib=rb-4.1.0"
-                    alt="Profile"
+                    src={userAvatar}
+                    alt={user?.user_metadata?.full_name || "Profile"}
                     className="h-full w-full object-cover"
                   />
                 </div>
@@ -195,8 +198,8 @@ const MainLayout = () => {
                   >
                     <div className="h-10 w-10 rounded-xl bg-slate-100 overflow-hidden ring-2 ring-white shadow-sm shrink-0">
                       <img
-                        src="https://plus.unsplash.com/premium_vector-1728560971513-32c0ac5e2c30?fm=jpg&q=60&w=3000&ixlib=rb-4.1.0"
-                        alt="Profile"
+                        src={userAvatar}
+                        alt={user?.user_metadata?.full_name || "Profile"}
                         className="h-full w-full object-cover"
                       />
                     </div>
@@ -226,8 +229,8 @@ const MainLayout = () => {
       <main
         className={
           isFullWidthPage
-            ? "flex-1 w-full px-0 pb-0 pt-0 flex flex-col overflow-hidden min-h-0"
-            : "flex-1 container mx-auto max-w-5xl px-6 pt-6"
+            ? `flex-1 w-full px-0 pb-0 pt-0 flex flex-col min-h-0 ${isFixedPage ? "overflow-hidden" : "overflow-y-auto"}`
+            : "flex-1 container mx-auto max-w-5xl px-6 pt-6 overflow-y-auto min-h-0"
         }
       >
         <Outlet />

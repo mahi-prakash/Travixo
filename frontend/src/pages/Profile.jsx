@@ -1,16 +1,17 @@
-import React, { useState, useEffect } from 'react';
-import { motion } from "framer-motion";
-import { Plane, Bookmark, Award, Globe, Pen, Camera, Globe2, MapPin, Calendar, ClipboardList, Plus, Heart, Settings, ShieldCheck, ChevronRight, BookOpen, Sun, Utensils, Compass, Send } from "lucide-react";
+import React, { useState } from 'react';
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Plane, Bookmark, Award, Globe, Pen, Camera, MapPin, Calendar,
+  ClipboardList, Heart, Settings, ShieldCheck, ChevronRight, BookOpen,
+  Sun, Utensils, Compass, Send, Clock, Check, Mail, Sparkles, ArrowRight, Map,
+  BarChart3, Trophy, FileText, ListTodo
+} from "lucide-react";
 import { useUser } from "../context/UserContext";
 import SEO from "../components/common/SEO";
-import Planner from './Planner';
 
 const ProfileDashboard = ({ user }) => {
-  const [activeNav, setActiveNav] = useState('Profile');
   const [activeTab, setActiveTab] = useState('Overview');
-
-  const navItems = ['Chat', 'Planner', 'Explore', 'Profile'];
-  const profileTabs = ['Overview', 'My Trips', 'Memories', 'Settings'];
+  const topTabs = ['Overview', 'My Trips', 'Memories', 'Settings'];
 
   // Bucket list state for interactivity
   const [bucketList, setBucketList] = useState(user.bucketList);
@@ -20,9 +21,6 @@ const ProfileDashboard = ({ user }) => {
   const [isWritingJournal, setIsWritingJournal] = useState(false);
   const [journalEntry, setJournalEntry] = useState('');
   const [savedJournal, setSavedJournal] = useState(null);
-
-
-
 
   const toggleBucketList = (id) => {
     setBucketList(bucketList.map(item =>
@@ -46,796 +44,95 @@ const ProfileDashboard = ({ user }) => {
     setIsWritingJournal(false);
   };
 
-  // Handlers for dynamic actions
   const handleEditProfile = () => alert("Edit Profile Clicked");
   const handleUpdateAvatar = () => alert("Update Avatar Clicked");
   const handlePrivacySettings = () => alert("Privacy & Security Clicked");
   const handleLike = (title) => alert(`Liked ${title}!`);
 
+  const sidebarItems = [
+    { id: 'Quick Stats', label: 'Quick Stats', icon: BarChart3 },
+    { id: 'Achievements', label: 'Achievements & Badges', icon: Trophy },
+    { id: 'Travel Journal', label: 'Travel Journal', icon: FileText },
+    { id: 'Bucket List', label: 'Bucket List', icon: ListTodo },
+  ];
+
   return (
-    <div className="dashboard-wrapper">
-      <SEO 
+    <div className="bg-slate-50/50 w-full min-h-full flex flex-col pb-20">
+      <SEO
         title="Travel Dashboard"
         url="/profile"
         description="View your travel stats, upcoming trips, bucket list, and digital memories. Your personal command center for all things travel."
         keywords="travel dashboard, user profile, travel stats, bucket list, travel memories"
       />
-      <style>{`
-        :root {
-            --primary-blue: #0081C9;
-            --text-main: #0f172a;
-            --text-muted: #64748b;
-            --text-light: #94a3b8;
-            --bg-main: #f8fafc;
-            --bg-card: #ffffff;
-            --font-main: 'Inter', sans-serif;
-            --blue-light: #f0f9ff;
-            --blue-dark: #0081C9;
-            --red-light: #fef2f2;
-            --red-dark: #ef4444;
-            --red-accent: #f87171;
-            --yellow-light: #fefce8;
-            --yellow-dark: #eab308;
-            --green-light: #f0fdf4;
-            --green-dark: #22c55e;
-            --purple-light: #faf5ff;
-            --purple-dark: #a855f7;
-        }
-        .dashboard-wrapper {
-            font-family: var(--font-main);
-            background-color: var(--bg-main);
-            color: var(--text-main);
-            line-height: 1.5;
-            min-height: 100vh;
-        }
-        .dashboard-container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 2rem 2rem 4rem 2rem;
-        }
-        .cover-banner {
-            position: relative;
-            height: 280px;
-            border-radius: 32px;
-            background-size: cover;
-            background-position: center;
-            margin-bottom: 2rem;
-            overflow: hidden;
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.05);
-        }
-        .cover-overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: linear-gradient(to right, rgba(15, 23, 42, 0.8) 0%, rgba(15, 23, 42, 0.2) 100%);
-        }
-        .btn-edit-profile {
-            position: absolute;
-            top: 1.5rem;
-            right: 1.5rem;
-            background: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            color: white;
-            padding: 0.75rem 1.25rem;
-            border-radius: 16px;
-            font-size: 0.85rem;
-            font-weight: 700;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            cursor: pointer;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            font-family: inherit;
-            z-index: 10;
-        }
-        .btn-edit-profile:hover {
-            background: rgba(255, 255, 255, 0.2);
-            transform: translateY(-2px);
-        }
-        .banner-content {
-            position: absolute;
-            bottom: 2.5rem;
-            left: 2.5rem;
-            display: flex;
-            align-items: flex-end;
-            gap: 1.75rem;
-            z-index: 10;
-        }
-        .profile-avatar-wrapper {
-            position: relative;
-        }
-        .main-avatar {
-            width: 128px;
-            height: 128px;
-            border-radius: 28px;
-            border: 5px solid white;
-            object-fit: cover;
-            background: white;
-            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
-        }
-        .btn-camera {
-            position: absolute;
-            bottom: -5px;
-            right: -5px;
-            background-color: var(--primary-blue);
-            color: white;
-            border: 4px solid white;
-            width: 40px;
-            height: 40px;
-            border-radius: 14px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            transition: transform 0.2s;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        }
-        .btn-camera:hover {
-            transform: scale(1.1);
-        }
-        .profile-info {
-            color: white;
-            padding-bottom: 0.75rem;
-        }
-        .profile-name {
-            font-size: 2.5rem;
-            font-weight: 900;
-            margin: 0 0 0.25rem 0;
-            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
-            letter-spacing: -0.025em;
-        }
-        .profile-meta {
-            font-size: 0.95rem;
-            font-weight: 600;
-            opacity: 0.95;
-            margin: 0;
-            display: flex;
-            align-items: center;
-            gap: 0.6rem;
-        }
-        .profile-tabs-container {
-            display: flex;
-            justify-content: center;
-            gap: 2.5rem;
-            border-bottom: 1px solid #e2e8f0;
-            margin-bottom: 3rem;
-            width: 100%;
-            max-width: 800px;
-            margin-left: auto;
-            margin-right: auto;
-        }
-        .profile-tab {
-            background: none;
-            border: none;
-            font-family: inherit;
-            font-size: 0.875rem;
-            font-weight: 500;
-            color: #64748b;
-            padding: 0 0.25rem 0.75rem 0.25rem;
-            cursor: pointer;
-            position: relative;
-            transition: color 0.3s ease;
-        }
-        .profile-tab:hover {
-            color: #0f172a;
-        }
-        .profile-tab.active {
-            color: var(--primary-blue);
-        }
-        .dashboard-grid {
-            display: grid;
-            grid-template-columns: 320px 1fr 1fr;
-            grid-auto-rows: minmax(min-content, max-content);
-            gap: 2rem;
-        }
-        .sidebar-column, .main-column, .grid-2-cols {
-            display: contents;
-        }
-        .card {
-            background-color: var(--bg-card);
-            border-radius: 32px;
-            padding: 2rem;
-            box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.03);
-            border: 1px solid #f1f5f9;
-        }
-        .flex-col-card {
-            display: flex;
-            flex-direction: column;
-        }
-        .card-title {
-            font-size: 0.75rem;
-            color: var(--text-light);
-            letter-spacing: 0.1em;
-            font-weight: 800;
-            margin-bottom: 1.75rem;
-            margin-top: 0;
-            text-transform: uppercase;
-        }
-        .mt-auto { margin-top: auto; }
-        .mt-4 { margin-top: 1.5rem; }
-        .stats-card { 
-            grid-column: 1; 
-            grid-row: 1; 
-            position: relative;
-            overflow: hidden;
-            background-size: cover;
-            background-position: center;
-            background-image: url('https://images.unsplash.com/photo-1503220317375-aaad61436b1b?q=80&w=800&auto=format&fit=crop');
-        }
-        .stats-overlay {
-            position: absolute;
-            inset: 0;
-            background: linear-gradient(to bottom, rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0.95) 100%);
-            z-index: 1;
-        }
-        .stats-content {
-            position: relative;
-            z-index: 2;
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-        }
-        .upcoming-trip-card { grid-column: 2 / 4; grid-row: 1; }
-        .badges-card { grid-column: 1; grid-row: 2; }
-        .map-card { grid-column: 2; grid-row: 2 / 4; }
-        .bucketlist-card { grid-column: 3; grid-row: 2 / 4; }
-        .journal-card { grid-column: 1; grid-row: 3; }
-        .full-span-card {
-            grid-column: 2 / 4;
-            grid-row: 1 / 4;
-        }
-        .stat-row {
-            display: flex;
-            align-items: center;
-            gap: 1.25rem;
-            margin-bottom: 0.5rem;
-        }
-        .stat-icon-wrapper {
-            width: 52px;
-            height: 52px;
-            border-radius: 18px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.3rem;
-            background: white;
-            border: 1.5px solid var(--primary-blue);
-            box-shadow: 0 4px 12px rgba(0, 129, 201, 0.08);
-        }
-        .bg-blue-light { background-color: #f0f9ff; }
-        .text-blue { color: #0081C9; }
-        .bg-red-light { background-color: #fef2f2; }
-        .text-red { color: #ef4444; }
-        .text-red-accent { color: #f87171; }
-        .bg-yellow-light { background-color: #fefce8; }
-        .text-yellow { color: #eab308; }
-        .bg-green-light { background-color: #f0fdf4; }
-        .text-green { color: #22c55e; }
-        .stat-name {
-            flex-grow: 1;
-            font-weight: 700;
-            color: #475569;
-            font-size: 0.95rem;
-        }
-        .stat-value {
-            font-weight: 800;
-            font-size: 1.15rem;
-            color: var(--text-main);
-            letter-spacing: -0.01em;
-        }
-        .badges-grid {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 1.5rem;
-            justify-content: space-between;
-        }
-        .badge-item {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 0.5rem;
-            cursor: pointer;
-            transition: transform 0.2s;
-        }
-        .badge-item:hover { transform: translateY(-3px); }
-        .badge-icon {
-            width: 64px;
-            height: 64px;
-            border-radius: 20px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.6rem;
-            background: white;
-            border: 1.5px solid var(--primary-blue);
-            box-shadow: 0 4px 12px rgba(0, 129, 201, 0.08);
-            color: var(--primary-blue);
-        }
-        .badge-name {
-            font-size: 0.8rem;
-            font-weight: 700;
-            color: #64748b;
-            text-align: center;
-            max-width: 80px;
-        }
-        .card-header-flex {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 2rem;
-        }
-        .section-title {
-            font-size: 1.5rem;
-            font-weight: 900;
-            margin: 0;
-            color: var(--text-main);
-            letter-spacing: -0.02em;
-        }
-        .btn-link {
-            background: none;
-            border: none;
-            color: var(--primary-blue);
-            font-weight: 800;
-            font-size: 0.9rem;
-            cursor: pointer;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-        .trip-banner {
-            position: relative;
-            border-radius: 28px;
-            background-size: cover;
-            background-position: center;
-            overflow: hidden;
-            cursor: pointer;
-            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
-        }
-        .trip-banner:hover { transform: translateY(-4px); box-shadow: 0 20px 30px -10px rgba(0, 0, 0, 0.15); }
-        .trip-banner-overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: linear-gradient(to top, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0.2) 60%, transparent 100%);
-        }
-        .weather-widget {
-            position: absolute;
-            top: 1.25rem;
-            right: 1.25rem;
-            background: rgba(255, 255, 255, 0.2);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            color: white;
-            padding: 0.5rem 1rem;
-            border-radius: 14px;
-            font-weight: 700;
-            font-size: 0.85rem;
-        }
-        .trip-banner-content {
-            position: absolute;
-            bottom: 2rem;
-            left: 2rem;
-            color: white;
-            width: calc(100% - 4rem);
-        }
-        .trip-header-info {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 0.75rem;
-        }
-        .trip-status {
-            background-color: #22c55e;
-            padding: 0.35rem 0.85rem;
-            border-radius: 12px;
-            font-size: 0.7rem;
-            font-weight: 900;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        }
-        .trip-countdown {
-            font-size: 0.85rem;
-            font-weight: 700;
-            background: rgba(255, 255, 255, 0.15);
-            padding: 0.35rem 0.85rem;
-            border-radius: 12px;
-            backdrop-filter: blur(4px);
-        }
-        .trip-banner-content h3 {
-            margin: 0 0 0.4rem 0;
-            font-size: 2rem;
-            font-weight: 900;
-            letter-spacing: -0.02em;
-        }
-        .trip-banner-content p {
-            margin: 0;
-            font-size: 1rem;
-            opacity: 0.95;
-            font-weight: 500;
-        }
-        .icon-large { font-size: 1.75rem; }
-        .map-placeholder {
-            border-radius: 24px;
-            overflow: hidden;
-            border: 1px solid #f1f5f9;
-        }
-        .progress-header {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 0.75rem;
-            font-size: 0.9rem;
-            font-weight: 700;
-            color: #64748b;
-        }
-        .progress-bar-container {
-            height: 14px;
-            background-color: #f1f5f9;
-            border-radius: 8px;
-            overflow: hidden;
-            border: 1px solid #f1f5f9;
-        }
-        .progress-bar {
-            height: 100%;
-            background: linear-gradient(to right, #0081C9, #6366f1);
-            border-radius: 8px;
-        }
-        .bucket-list {
-            list-style: none;
-            padding: 0;
-            margin: 0 0 2rem 0;
-            display: flex;
-            flex-direction: column;
-            gap: 1rem;
-            overflow-y: auto;
-            max-height: 280px;
-            padding-right: 0.5rem;
-        }
-        .bucket-item {
-            display: flex;
-            align-items: center;
-            gap: 1.25rem;
-            cursor: pointer;
-            padding: 0.75rem 1rem;
-            border-radius: 16px;
-            transition: all 0.2s ease;
-            background: #f8fafc;
-            border: 1px solid #f1f5f9;
-        }
-        .bucket-item:hover { background: #f1f5f9; border-color: #e2e8f0; }
-        .checkbox {
-            width: 24px;
-            height: 24px;
-            border: 2px solid #cbd5e1;
-            border-radius: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            font-size: 0.8rem;
-            background: white;
-        }
-        .checkbox.checked {
-            background-color: var(--primary-blue);
-            border-color: var(--primary-blue);
-            box-shadow: 0 4px 6px -1px rgba(0, 129, 201, 0.3);
-        }
-        .bucket-item.completed span {
-            text-decoration: line-through;
-            color: #94a3b8;
-            font-weight: 500;
-        }
-        .bucket-item span {
-            font-weight: 700;
-            color: var(--text-main);
-            font-size: 0.95rem;
-        }
-        .add-bucket-form { display: flex; gap: 0.75rem; }
-        .bucket-input {
-            flex-grow: 1;
-            padding: 0.85rem 1.25rem;
-            border-radius: 16px;
-            border: 1px solid #e2e8f0;
-            font-family: inherit;
-            font-size: 0.95rem;
-            font-weight: 600;
-            outline: none;
-            transition: all 0.2s;
-            background: #f8fafc;
-        }
-        .bucket-input:focus {
-            border-color: var(--primary-blue);
-            background: white;
-            box-shadow: 0 0 0 4px rgba(0, 129, 201, 0.1);
-        }
-        .bucket-submit-btn {
-            background: white;
-            color: var(--primary-blue);
-            border: 1.5px solid var(--primary-blue);
-            border-radius: 16px;
-            width: 48px;
-            height: 48px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            transition: all 0.3s;
-            box-shadow: 0 4px 12px rgba(0, 129, 201, 0.08);
-        }
-        .bucket-submit-btn:hover { 
-            background: var(--blue-light);
-            transform: translateY(-2px); 
-        }
-        .trips-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-            gap: 1.5rem;
-        }
-        .memory-card {
-            border-radius: 20px;
-            overflow: hidden;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-            cursor: pointer;
-            transition: transform 0.2s;
-        }
-        .memory-card:hover { transform: translateY(-5px); }
-        .memory-img-wrapper {
-            position: relative;
-            height: 200px;
-            width: 100%;
-            overflow: hidden;
-        }
-        .memory-img-wrapper img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            transition: transform 0.3s;
-        }
-        .memory-overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.1);
-            display: flex;
-            align-items: flex-start;
-            justify-content: flex-end;
-            padding: 1rem;
-            opacity: 0;
-            transition: opacity 0.2s;
-        }
-        .memory-card:hover .memory-overlay { opacity: 1; }
-        .like-btn {
-            background: white;
-            color: var(--red-dark);
-            border: none;
-            width: 36px;
-            height: 36px;
-            border-radius: 50%;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        }
-        .memory-info {
-            padding: 1.25rem;
-            background: white;
-        }
-        .memory-info-top {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 0.5rem;
-        }
-        .memory-info-top h4 {
-            margin: 0;
-            font-size: 1.1rem;
-            font-weight: 700;
-        }
-        .likes-count {
-            font-size: 0.85rem;
-            font-weight: 600;
-            color: var(--text-muted);
-        }
-        .memory-info p {
-            margin: 0;
-            font-size: 0.85rem;
-            color: var(--text-muted);
-        }
-        .gallery-masonry {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-            grid-auto-rows: 250px;
-            gap: 1.5rem;
-            margin-top: 1.5rem;
-        }
-        .gallery-item {
-            position: relative;
-            border-radius: 24px;
-            overflow: hidden;
-            cursor: pointer;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-            transition: transform 0.3s, box-shadow 0.3s;
-        }
-        .gallery-item:hover { transform: translateY(-5px); }
-        .gallery-item img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            transition: transform 0.5s;
-        }
-        .gallery-item-overlay {
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            padding: 2rem 1.5rem 1.5rem 1.5rem;
-            background: linear-gradient(to top, rgba(0, 0, 0, 0.8), transparent);
-            display: flex;
-            flex-direction: column;
-            color: white;
-            opacity: 0;
-            transition: opacity 0.3s;
-        }
-        .gallery-item:hover .gallery-item-overlay { opacity: 1; }
-        .gallery-title { font-weight: 800; font-size: 1.1rem; margin-bottom: 0.25rem; }
-        .gallery-location { font-size: 0.8rem; opacity: 0.9; }
-        .settings-title {
-            font-size: 1.5rem;
-            font-weight: 900;
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-            margin: 0 0 2.5rem 0;
-            color: var(--text-main);
-            letter-spacing: -0.02em;
-        }
-        .settings-fields-row {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 2rem;
-            margin-bottom: 2.5rem;
-        }
-        .settings-field {
-            display: flex;
-            flex-direction: column;
-            gap: 0.75rem;
-        }
-        .settings-field label {
-            font-size: 0.75rem;
-            font-weight: 800;
-            color: #64748b;
-            letter-spacing: 0.1em;
-            text-transform: uppercase;
-        }
-        .input-box {
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-            padding: 1rem 1.25rem;
-            background-color: #f8fafc;
-            border-radius: 18px;
-            border: 1px solid #e2e8f0;
-            transition: all 0.2s;
-        }
-        .input-box:focus-within {
-            border-color: var(--primary-blue);
-            background: white;
-            box-shadow: 0 0 0 4px rgba(0, 129, 201, 0.1);
-        }
-        .input-box input {
-            border: none;
-            background: transparent;
-            font-family: inherit;
-            font-weight: 700;
-            font-size: 1rem;
-            color: var(--text-main);
-            width: 100%;
-            outline: none;
-        }
-        .bg-blue-tint {
-            background-color: #f0f9ff;
-            border-color: #e0f2fe;
-        }
-        .vibe-text {
-            font-weight: 800;
-            color: #0081C9;
-            font-size: 1rem;
-        }
-        .privacy-section {
-            display: flex;
-            align-items: center;
-            gap: 1.5rem;
-            padding: 1.75rem;
-            background-color: #f8fafc;
-            border-radius: 28px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            border: 1px solid #f1f5f9;
-        }
-        .privacy-section:hover { background-color: white; border-color: var(--primary-blue); transform: translateY(-2px); box-shadow: 0 10px 20px -10px rgba(0, 129, 201, 0.2); }
-        .privacy-icon {
-            width: 56px;
-            height: 56px;
-            border-radius: 18px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.5rem;
-            background-color: white;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-            color: #64748b;
-        }
-        .privacy-info { flex-grow: 1; }
-        .privacy-info h4 { margin: 0 0 0.35rem 0; font-size: 1.1rem; font-weight: 800; color: var(--text-main); }
-        .privacy-info p { margin: 0; font-size: 0.9rem; color: #64748b; font-weight: 500; }
 
-        @media (max-width: 900px) {
-            .dashboard-grid { grid-template-columns: 1fr; }
-            .stats-card, .upcoming-trip-card, .badges-card, .map-card, .bucketlist-card, .journal-card, .full-span-card {
-                grid-column: 1 / -1;
-                grid-row: auto;
-            }
-            .settings-fields-row { grid-template-columns: 1fr; }
-        }
-      `}</style>
+      {/* Top Container */}
+      <div className="max-w-[1400px] w-full mx-auto px-4 sm:px-10 lg:px-20 pt-6">
 
-
-      <main className="dashboard-container">
         {/* Cover Banner Section */}
-        <section className="cover-banner" style={{ backgroundImage: `url(${user.coverImage})` }}>
-          <div className="cover-overlay"></div>
+        <section className="relative rounded-[28px] sm:rounded-[36px] h-[260px] sm:h-[340px] w-full overflow-hidden shadow-2xl border border-slate-100/80 group mb-8">
+          <img
+            src={user.coverImage}
+            alt="Cover"
+            className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-slate-900/30 to-transparent" />
 
-          <button className="btn-edit-profile" onClick={handleEditProfile}>
-            <i className="fa-solid fa-pen"></i> Edit Profile
-          </button>
+          {/* Edit Profile Button (Top Right) */}
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={handleEditProfile}
+            className="absolute top-6 right-6 px-4 py-2.5 rounded-2xl bg-white/90 backdrop-blur-md text-slate-800 font-bold text-xs sm:text-sm flex items-center gap-2 shadow-lg hover:bg-white hover:text-sky-600 transition-all z-10"
+          >
+            <Pen size={14} />
+            <span>Edit Profile</span>
+          </motion.button>
 
-          <div className="banner-content">
-            <div className="profile-avatar-wrapper">
-              <img src={user.avatarImage} alt={user.profileName} className="main-avatar" />
-              <button className="btn-camera" onClick={handleUpdateAvatar} aria-label="Update avatar">
-                <i className="fa-solid fa-camera"></i>
+          {/* Banner Content (Avatar + Info Bottom) */}
+          <div className="absolute bottom-6 sm:bottom-8 left-6 sm:left-10 right-6 flex flex-col sm:flex-row items-start sm:items-end gap-5 sm:gap-6 z-10">
+            <div className="relative group/avatar shrink-0">
+              <div className="h-24 w-24 sm:h-28 sm:w-28 rounded-3xl bg-slate-100 overflow-hidden ring-4 ring-white shadow-2xl">
+                <img src={user.avatarImage} alt={user.profileName} className="h-full w-full object-cover" />
+              </div>
+              <button
+                onClick={handleUpdateAvatar}
+                aria-label="Update avatar"
+                className="absolute bottom-1 right-1 h-9 w-9 rounded-xl bg-sky-600 text-white flex items-center justify-center shadow-lg ring-2 ring-white hover:bg-sky-500 transition-all"
+              >
+                <Camera size={16} />
               </button>
             </div>
 
-            <div className="profile-info">
-              <h1 className="profile-name">{user.profileName}</h1>
-              <p className="profile-meta">
-                <i className="fa-solid fa-location-dot text-red-accent"></i> {user.location} &middot; {user.joinedDate}
-              </p>
+            <div className="flex-1 text-white">
+              <h1 className="text-2xl sm:text-4xl font-black tracking-tight leading-none mb-2 drop-shadow-sm">
+                {user.profileName}
+              </h1>
+              <div className="flex flex-wrap items-center gap-4 text-xs sm:text-sm font-medium text-slate-200">
+                <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-white border border-white/10">
+                  <MapPin size={14} className="text-sky-400" />
+                  {user.location}
+                </span>
+                <span className="text-slate-300">&bull;</span>
+                <span className="text-slate-300 font-semibold">{user.joinedDate}</span>
+              </div>
             </div>
           </div>
         </section>
 
-        {/* Dynamic Profile Tabs */}
-        <div className="profile-tabs-container">
-          {profileTabs.map(tab => (
+        {/* TOP HORIZONTAL TABS UI (Overview, My Trips, Memories, Settings) */}
+        <div className="flex items-center justify-center gap-6 sm:gap-10 border-b border-slate-200 w-full mb-8 overflow-x-auto no-scrollbar">
+          {topTabs.map((tab) => (
             <button
               key={tab}
-              className={`profile-tab ${activeTab === tab ? 'active' : ''}`}
               onClick={() => setActiveTab(tab)}
+              className={`relative pb-3 text-sm sm:text-base font-bold transition-colors duration-300 whitespace-nowrap px-2 ${activeTab === tab ? "text-sky-600" : "text-slate-500 hover:text-slate-800"
+                }`}
             >
               {tab}
               {activeTab === tab && (
                 <motion.div
                   layoutId="profileTabIndicator"
-                  style={{
-                    position: 'absolute',
-                    bottom: 0,
-                    left: 0,
-                    right: 0,
-                    height: '2px',
-                    backgroundColor: 'var(--primary-blue)',
-                    borderRadius: '9999px'
-                  }}
+                  className="absolute bottom-0 left-0 right-0 h-0.5 bg-sky-600 rounded-t-full"
                   initial={false}
                   transition={{ type: "spring", stiffness: 500, damping: 30 }}
                 />
@@ -844,304 +141,551 @@ const ProfileDashboard = ({ user }) => {
           ))}
         </div>
 
-        {/* Dashboard Perfect Grid Layout */}
-        <div className="dashboard-grid">
+        {/* Dashboard Grid (1 Col Left Fixed Sidebar + 3 Col Right Content Cell) */}
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 items-start">
 
-          {/* Left Sidebar (participates in display: contents) */}
-          <div className="sidebar-column">
+          {/* LEFT FIXED SIDEBAR NAVIGATION (Quick Stats, Achievements, Journal, Bucket List) */}
+          <div className="lg:col-span-1 lg:sticky lg:top-6 space-y-6">
+            <div className="bg-white rounded-[28px] sm:rounded-[32px] p-5 border border-slate-100 shadow-xl space-y-2">
+              <p className="text-[11px] font-black uppercase tracking-widest text-slate-400 px-3.5 pb-2">
+                Travel Hub & Stats
+              </p>
 
-            {/* Row 1, Col 1 */}
-            <section className="card stats-card flex-col-card">
-              <div className="stats-overlay"></div>
-              <div className="stats-content">
-                <h3 className="card-title">QUICK STATS</h3>
-                <div className="stats-list" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', flexGrow: 1 }}>
-                  <div className="stat-row">
-                    <div className="stat-icon-wrapper">
-                      <Plane size={24} className="text-[#0081C9]" />
+              {sidebarItems.map((item) => {
+                const Icon = item.icon;
+                const isSelected = activeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => setActiveTab(item.id)}
+                    className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl font-bold text-sm transition-all text-left ${isSelected
+                      ? "bg-sky-50 text-sky-600 shadow-sm border border-sky-100/80"
+                      : "text-slate-600 hover:bg-slate-50/80 hover:text-slate-900"
+                      }`}
+                  >
+                    <div className={`h-8 w-8 rounded-xl flex items-center justify-center transition-colors ${isSelected ? "bg-sky-600 text-white shadow-md shadow-sky-100" : "bg-slate-100 text-slate-500"
+                      }`}>
+                      <Icon size={16} />
                     </div>
-                    <span className="stat-name">Trips Planned</span>
-                    <span className="stat-value">{user.stats.tripsPlanned}</span>
-                  </div>
-                  <div className="stat-row">
-                    <div className="stat-icon-wrapper">
-                      <Bookmark size={24} className="text-[#0081C9]" />
-                    </div>
-                    <span className="stat-name">Places Saved</span>
-                    <span className="stat-value">{user.stats.placesSaved}</span>
-                  </div>
-                  <div className="stat-row">
-                    <div className="stat-icon-wrapper">
-                      <Award size={24} className="text-[#0081C9]" />
-                    </div>
-                    <span className="stat-name">Miles Traveled</span>
-                    <span className="stat-value">{user.stats.milesTraveled}</span>
-                  </div>
-                  <div className="stat-row">
-                    <div className="stat-icon-wrapper">
-                      <Globe size={24} className="text-[#0081C9]" />
-                    </div>
-                    <span className="stat-name">Countries Visited</span>
-                    <span className="stat-value">{user.stats.countriesVisited}</span>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            {/* Row 2, Col 1 */}
-            <section className="card badges-card flex-col-card">
-              <h3 className="card-title">ACHIEVEMENTS</h3>
-              <div className="badges-grid" style={{ flexGrow: 1, alignContent: 'center' }}>
-                {user.badges.map(badge => {
-                  const IconComponent = badge.name === "Early Bird" ? Sun : (badge.name === "Foodie" ? Utensils : Compass);
-                  return (
-                    <div className="badge-item" key={badge.id} title={badge.name}>
-                      <div className="badge-icon">
-                        <IconComponent size={28} />
-                      </div>
-                      <span className="badge-name">{badge.name}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-
-            {/* Row 3, Col 1 */}
-            <section className="card journal-card flex-col-card">
-              <h3 className="card-title">TRAVEL JOURNAL</h3>
-
-              {isWritingJournal ? (
-                <div className="journal-editor" style={{ display: 'flex', flexDirection: 'column', flexGrow: 1 }}>
-                  <textarea
-                    autoFocus
-                    placeholder="How are you feeling about your upcoming trip?"
-                    value={journalEntry}
-                    onChange={(e) => setJournalEntry(e.target.value)}
-                    className="journal-textarea"
-                  />
-                  <div style={{ display: 'flex', gap: '1rem', marginTop: '1.5rem' }}>
-                    <button onClick={() => setIsWritingJournal(false)} style={{ flex: 1, padding: '1rem', borderRadius: '16px', background: '#f1f5f9', color: '#64748b', border: 'none', fontWeight: 800, cursor: 'pointer', transition: 'all 0.2s' }}>Cancel</button>
-                    <button onClick={handleSaveJournal} className="btn-journal-save" style={{ flex: 2, marginTop: 0 }}>Save Entry</button>
-                  </div>
-                </div>
-              ) : savedJournal ? (
-                <div className="journal-saved" style={{ display: 'flex', flexDirection: 'column', flexGrow: 1 }}>
-                  <div className="journal-date text-muted" style={{ fontSize: '0.75rem', marginBottom: '0.5rem' }}>Latest Entry</div>
-                  <p className="journal-text" style={{ fontSize: '0.95rem', fontStyle: 'italic', color: 'var(--text-main)', marginBottom: '1.5rem', flexGrow: 1 }}>"{savedJournal}"</p>
-                  <button className="mt-auto" onClick={() => setIsWritingJournal(true)} style={{ width: '100%', padding: '0.75rem', borderRadius: '12px', background: '#eff6ff', color: 'var(--primary-blue)', border: 'none', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
-                    <i className="fa-solid fa-pen"></i> Edit Entry
+                    <span className="flex-1 truncate">{item.label}</span>
+                    {isSelected && (
+                      <motion.div
+                        layoutId="sidebarActiveIndicator"
+                        className="w-1.5 h-6 bg-sky-600 rounded-full"
+                      />
+                    )}
                   </button>
-                </div>
-              ) : (
-                <>
-                  <p className="text-muted" style={{ fontSize: '0.85rem', marginBottom: '1.5rem', flexGrow: 1 }}>
-                    You haven't logged any notes for your upcoming trips yet.
-                  </p>
-                  <button className="mt-auto" onClick={() => setIsWritingJournal(true)} style={{
-                    width: '100%', padding: '0.85rem', borderRadius: '16px', background: 'var(--primary-blue)',
-                    color: 'white', border: 'none', fontWeight: 600, cursor: 'pointer', transition: 'background 0.2s',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem'
-                  }}>
-                    <i className="fa-solid fa-book-open"></i> Write Entry
-                  </button>
-                </>
-              )}
-            </section>
+                );
+              })}
+            </div>
           </div>
 
-          {/* Main Content Column (participates in display: contents) */}
-          <div className="main-column">
+          {/* RIGHT CELL (CHANGES DYNAMICALLY WHEN CLICKING TOP TABS OR SIDEBAR ITEMS) */}
+          <div className="lg:col-span-3">
+            <AnimatePresence mode="wait">
 
-            {activeTab === 'Overview' && (
-              <>
-                {/* Row 1, Col 2 to 3 */}
-                <section className="card upcoming-trip-card flex-col-card">
-                  <div className="card-header-flex">
-                    <h3 className="section-title">Upcoming Journey</h3>
-                    <button className="btn-link">View Itinerary <i className="fa-solid fa-arrow-right ml-1"></i></button>
-                  </div>
-                  {user.upcomingTrips.map(trip => (
-                    <div className="trip-banner" style={{ backgroundImage: `url(${trip.image})`, flexGrow: 1, marginBottom: 0 }} key={trip.id}>
-                      <div className="trip-banner-overlay"></div>
-
-                      <div className="weather-widget">
-                        <i className="fa-solid fa-sun text-yellow"></i> {trip.weather}
-                      </div>
-
-                      <div className="trip-banner-content">
-                        <div className="trip-header-info">
-                          <span className="trip-status">{trip.status}</span>
-                          <span className="trip-countdown"><i className="fa-regular fa-clock"></i> In {trip.daysUntil} Days</span>
-                        </div>
-                        <h3>{trip.destination}</h3>
-                        <p><i className="fa-regular fa-calendar text-sky-700"></i> {trip.date}</p>
-                      </div>
-                    </div>
-                  ))}
-                </section>
-
-                {/* Sub-grid container that will also use display: contents to join the main grid */}
-                <div className="grid-2-cols">
-                  {/* Row 2 & 3, Col 2 */}
-                  <section className="card map-card flex-col-card">
-                    <div className="card-header-flex">
-                      <h2 className="section-title">World Explorer</h2>
-                      <i className="fa-solid fa-map-location-dot text-blue icon-large"></i>
-                    </div>
-
-                    <div className="map-placeholder" style={{ padding: 0, border: 'none', flexGrow: 1, position: 'relative', overflow: 'hidden', borderRadius: '20px' }}>
-                      <img
-                        src="https://images.unsplash.com/photo-1524661135-423995f22d0b?fm=jpg&q=60&w=3000&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8Mnx8d29ybGQlMjBtYXB8ZW58MHx8MHx8fDA%3D"
-                        alt="Travel Map"
-                        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
-                      />
-                    </div>
-
-                    <div className="progress-footer mt-4">
-                      <div className="progress-header">
-                        <span className="font-bold">{user.stats.countriesVisited} Countries</span>
-                        <span className="text-muted text-sm">Goal: 50</span>
-                      </div>
-                      <div className="progress-bar-container">
-                        <div className="progress-bar" style={{ width: `${(user.stats.countriesVisited / 50) * 100}%` }}></div>
-                      </div>
-                    </div>
-                  </section>
-
-                  {/* Row 2 & 3, Col 3 */}
-                  <section className="card bucketlist-card flex-col-card">
-                    <div className="card-header-flex">
-                      <h2 className="section-title">Bucket List</h2>
-                      <i className="fa-solid fa-clipboard-list text-blue icon-large"></i>
-                    </div>
-
-                    <ul className="bucket-list" style={{ flexGrow: 1 }}>
-                      {bucketList.map(item => (
-                        <li key={item.id} className={`bucket-item ${item.completed ? 'completed' : ''}`} onClick={() => toggleBucketList(item.id)}>
-                          <div className={`checkbox ${item.completed ? 'checked' : ''}`}>
-                            {item.completed && <i className="fa-solid fa-check"></i>}
-                          </div>
-                          <span>{item.place}</span>
-                        </li>
-                      ))}
-                    </ul>
-
-                    {/* Add new bucket list item form */}
-                    <form onSubmit={handleAddBucketItem} className="add-bucket-form mt-4">
-                      <input
-                        type="text"
-                        placeholder="Add new destination..."
-                        value={newBucketItem}
-                        onChange={(e) => setNewBucketItem(e.target.value)}
-                        className="bucket-input"
-                      />
-                      <button type="submit" className="bucket-submit-btn">
-                        <Send size={20} />
+              {/* OVERVIEW TAB */}
+              {activeTab === 'Overview' && (
+                <motion.div
+                  key="overview"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.2 }}
+                  className="space-y-8"
+                >
+                  {/* UPCOMING JOURNEY CARD */}
+                  <div className="bg-white rounded-[28px] sm:rounded-[32px] p-6 sm:p-8 border border-slate-100 shadow-xl space-y-6">
+                    <div className="flex items-center justify-between">
+                      <h2 className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-3">
+                        <Calendar className="text-sky-600 h-6 w-6" />
+                        <span>Upcoming Journey</span>
+                      </h2>
+                      <button className="text-xs sm:text-sm font-bold text-sky-600 hover:text-sky-700 flex items-center gap-1 transition-colors">
+                        <span>View Itinerary</span>
+                        <ArrowRight size={14} />
                       </button>
-                    </form>
-                  </section>
-                </div>
-              </>
-            )}
+                    </div>
 
-            {activeTab === 'My Trips' && (
-              <section className="card trips-list-card full-span-card">
-                <h2 className="section-title">Past Adventures</h2>
-                <div className="trips-grid">
-                  {user.recentMemories.map(mem => (
-                    <div className="memory-card" key={mem.id}>
-                      <div className="memory-img-wrapper">
-                        <img src={mem.image} alt={mem.title} />
-                        <div className="memory-overlay">
-                          <button className="like-btn" onClick={() => handleLike(mem.title)}>
-                            <i className="fa-solid fa-heart"></i>
+                    {user.upcomingTrips.map(trip => (
+                      <motion.div
+                        whileHover={{ y: -4 }}
+                        key={trip.id}
+                        className="relative rounded-[26px] h-64 sm:h-80 overflow-hidden shadow-2xl border border-slate-100 group cursor-pointer"
+                      >
+                        <img
+                          src={trip.image}
+                          alt={trip.destination}
+                          className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-slate-900/40 to-transparent" />
+
+                        <div className="absolute top-5 right-5 px-4 py-1.5 rounded-full bg-white/90 backdrop-blur-md text-slate-800 text-xs font-bold flex items-center gap-1.5 shadow-md">
+                          <Sun size={14} className="text-amber-500 fill-amber-500" />
+                          <span>{trip.weather}</span>
+                        </div>
+
+                        <div className="absolute bottom-6 left-6 sm:left-8 right-6 text-white space-y-2.5">
+                          <div className="flex items-center gap-3">
+                            <span className="px-3 py-1 rounded-full bg-sky-600 text-white font-bold text-[10px] tracking-wider uppercase shadow-md">
+                              {trip.status}
+                            </span>
+                            <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-200 bg-black/40 backdrop-blur-sm px-3.5 py-1 rounded-full border border-white/10">
+                              <Clock size={12} className="text-sky-400" />
+                              In {trip.daysUntil} Days
+                            </span>
+                          </div>
+                          <h3 className="text-3xl sm:text-4xl font-black tracking-tight">{trip.destination}</h3>
+                          <p className="text-xs sm:text-sm font-medium text-slate-300 flex items-center gap-2">
+                            <Calendar size={14} className="text-sky-400" />
+                            <span>{trip.date}</span>
+                          </p>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+
+                  {/* WORLD EXPLORER MAP */}
+                  <div className="bg-white rounded-[28px] sm:rounded-[32px] p-6 sm:p-8 border border-slate-100 shadow-xl space-y-6">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2.5">
+                        <Map className="text-indigo-600 h-6 w-6" />
+                        <span>World Explorer</span>
+                      </h3>
+                      <Globe size={20} className="text-slate-400" />
+                    </div>
+
+                    <div className="relative h-64 sm:h-72 w-full rounded-3xl overflow-hidden bg-slate-100 border border-slate-200/60 group shadow-md">
+                      <img
+                        src="https://images.unsplash.com/photo-1524661135-423995f22d0b?fm=jpg&q=60&w=3000&auto=format&fit=crop"
+                        alt="World Map"
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-slate-900/60 via-transparent to-transparent opacity-60 group-hover:opacity-30 transition-opacity" />
+                    </div>
+
+                    <div className="space-y-2 pt-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="font-extrabold text-slate-900">{user.stats.countriesVisited} Countries Visited</span>
+                        <span className="font-bold text-slate-400">Goal: 50 Countries</span>
+                      </div>
+                      <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-sky-500 to-indigo-600 rounded-full"
+                          style={{ width: `${(user.stats.countriesVisited / 50) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+
+              {/* MY TRIPS TAB */}
+              {activeTab === 'My Trips' && (
+                <motion.div
+                  key="trips"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.2 }}
+                  className="bg-white rounded-[28px] sm:rounded-[32px] p-6 sm:p-10 border border-slate-100 shadow-xl space-y-6"
+                >
+                  <div className="border-b border-slate-100 pb-6">
+                    <h2 className="text-xl sm:text-3xl font-black text-slate-900 tracking-tight mb-1">Past Adventures</h2>
+                    <p className="text-slate-500 text-sm">Relive your journey archives and saved trip records.</p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {user.recentMemories.map(mem => (
+                      <motion.div
+                        whileHover={{ y: -6 }}
+                        key={mem.id}
+                        className="rounded-2xl overflow-hidden border border-slate-200 bg-white shadow-md hover:shadow-xl transition-all flex flex-col group"
+                      >
+                        <div className="relative h-48 w-full overflow-hidden">
+                          <img src={mem.image} alt={mem.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                          <div className="absolute inset-0 bg-gradient-to-t from-slate-950/60 via-transparent to-transparent" />
+
+                          <button
+                            onClick={() => handleLike(mem.title)}
+                            className="absolute top-3 right-3 h-9 w-9 rounded-full bg-white/80 backdrop-blur-md text-slate-700 hover:text-rose-500 hover:bg-white flex items-center justify-center shadow-md transition-all"
+                          >
+                            <Heart size={16} />
                           </button>
                         </div>
-                      </div>
-                      <div className="memory-info">
-                        <div className="memory-info-top">
-                          <h4>{mem.title}</h4>
-                          <span className="likes-count"><i className="fa-solid fa-heart text-red"></i> {mem.likes}</span>
+
+                        <div className="p-5 flex-1 flex flex-col justify-between space-y-3">
+                          <div className="flex items-center justify-between">
+                            <h4 className="font-bold text-slate-900 text-base">{mem.title}</h4>
+                            <span className="text-xs font-bold text-slate-500 flex items-center gap-1">
+                              <Heart size={13} className="text-rose-500 fill-rose-500" />
+                              {mem.likes}
+                            </span>
+                          </div>
+                          <p className="text-xs font-medium text-slate-500 flex items-center gap-1.5">
+                            <MapPin size={13} className="text-sky-500" />
+                            <span>{mem.location}</span>
+                            <span>&bull;</span>
+                            <span>{mem.date}</span>
+                          </p>
                         </div>
-                        <p><i className="fa-solid fa-location-dot text-red-accent"></i> {mem.location} &middot; {mem.date}</p>
+                      </motion.div>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+
+              {/* MEMORIES TAB */}
+              {activeTab === 'Memories' && (
+                <motion.div
+                  key="memories"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.2 }}
+                  className="bg-white rounded-[28px] sm:rounded-[32px] p-6 sm:p-10 border border-slate-100 shadow-xl space-y-6"
+                >
+                  <div className="border-b border-slate-100 pb-6">
+                    <h2 className="text-xl sm:text-3xl font-black text-slate-900 tracking-tight mb-1">Photo Gallery</h2>
+                    <p className="text-slate-500 text-sm">A collection of your favorite captured moments around the world.</p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+                    {user.recentMemories.map(mem => (
+                      <motion.div
+                        whileHover={{ scale: 1.02 }}
+                        key={mem.id}
+                        className="relative h-64 rounded-2xl overflow-hidden shadow-lg group cursor-pointer border border-slate-200"
+                      >
+                        <img src={mem.image} alt={mem.title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
+                        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-slate-900/30 to-transparent opacity-90 group-hover:opacity-100 transition-opacity" />
+
+                        <div className="absolute bottom-5 left-5 right-5 text-white">
+                          <h4 className="font-extrabold text-base leading-tight mb-1">{mem.title}</h4>
+                          <span className="text-xs font-medium text-slate-300 flex items-center gap-1.5">
+                            <MapPin size={13} className="text-sky-400 shrink-0" />
+                            <span>{mem.location}</span>
+                          </span>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+
+              {/* SETTINGS TAB */}
+              {activeTab === 'Settings' && (
+                <motion.div
+                  key="settings"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.2 }}
+                  className="bg-white rounded-[28px] sm:rounded-[32px] p-6 sm:p-10 border border-slate-100 shadow-xl space-y-8"
+                >
+                  <div className="border-b border-slate-100 pb-6">
+                    <h2 className="text-xl sm:text-3xl font-black text-slate-900 tracking-tight mb-1 flex items-center gap-3">
+                      <Settings className="text-sky-600 h-7 w-7" />
+                      <span>Account Settings</span>
+                    </h2>
+                    <p className="text-slate-500 text-sm">Manage your travel profile preferences and account credentials.</p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-2">
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Email Address</label>
+                      <div className="flex items-center gap-3 p-4 rounded-2xl bg-slate-50 border border-slate-200 text-slate-700 font-semibold text-sm">
+                        <Mail size={18} className="text-slate-400 shrink-0" />
+                        <input type="email" value={user.email} readOnly className="bg-transparent focus:outline-none w-full truncate" />
                       </div>
                     </div>
-                  ))}
-                </div>
-              </section>
-            )}
 
-            {activeTab === 'Memories' && (
-              <section className="card memories-card full-span-card">
-                <h2 className="section-title">Photo Gallery</h2>
-                <p className="text-muted">A collection of your favorite captured moments around the world.</p>
-                <div className="gallery-masonry">
-                  {user.recentMemories.map(mem => (
-                    <div className="gallery-item" key={mem.id}>
-                      <img src={mem.image} alt={mem.title} />
-                      <div className="gallery-item-overlay">
-                        <span className="gallery-title">{mem.title}</span>
-                        <span className="gallery-location"><i className="fa-solid fa-location-dot"></i> {mem.location}</span>
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Traveler Vibe</label>
+                      <div className="flex items-center gap-3 p-4 rounded-2xl bg-sky-50/70 border border-sky-100 text-sky-700 font-bold text-sm">
+                        <Globe size={18} className="text-sky-600 shrink-0" />
+                        <span>{user.vibe}</span>
                       </div>
                     </div>
-                  ))}
-                </div>
-              </section>
-            )}
+                  </div>
 
-            {activeTab === 'Settings' && (
-              <section className="card settings-card full-span-card">
-                <h2 className="settings-title">
-                  <i className="fa-solid fa-gear text-blue"></i> Account Settings
-                </h2>
+                  <div
+                    onClick={handlePrivacySettings}
+                    className="flex items-center justify-between p-5 rounded-2xl bg-slate-50/50 hover:bg-sky-50/40 border border-slate-200/80 hover:border-sky-200 cursor-pointer transition-all group"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="h-12 w-12 rounded-2xl bg-slate-100 group-hover:bg-white flex items-center justify-center text-slate-600 group-hover:text-sky-600 transition-colors shadow-sm">
+                        <ShieldCheck size={24} />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-slate-900 text-base group-hover:text-sky-600 transition-colors">Privacy & Security</h4>
+                        <p className="text-xs font-medium text-slate-500">Manage password, tokens, and data privacy</p>
+                      </div>
+                    </div>
+                    <ChevronRight size={20} className="text-slate-400 group-hover:text-sky-600 group-hover:translate-x-1 transition-all" />
+                  </div>
+                </motion.div>
+              )}
 
-                <div className="settings-fields-row">
-                  <div className="settings-field">
-                    <label>EMAIL ADDRESS</label>
-                    <div className="input-box">
-                      <i className="fa-regular fa-envelope text-gray"></i>
-                      <input type="email" value={user.email} readOnly />
+              {/* QUICK STATS TAB (COMPACT & SLEEK SIZE) */}
+              {activeTab === 'Quick Stats' && (
+                <motion.div
+                  key="stats"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.2 }}
+                  className="max-w-2xl bg-white rounded-[28px] p-6 sm:p-8 border border-slate-100 shadow-xl space-y-6"
+                >
+                  <div className="border-b border-slate-100 pb-5">
+                    <h2 className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">
+
+                      <span>Your Quick Stats</span>
+                    </h2>
+                    <p className="text-slate-500 text-xs sm:text-sm">Summary of your travel milestones and platform interactions.</p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-4 sm:p-5 rounded-2xl bg-slate-50/70 border border-slate-100 flex items-center gap-4">
+                      <div className="h-12 w-12 rounded-2xl bg-sky-50 flex items-center justify-center text-sky-600 shadow-sm shrink-0">
+                        <Plane size={24} />
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Trips Planned</p>
+                        <h4 className="text-2xl font-black text-slate-900">{user.stats.tripsPlanned}</h4>
+                      </div>
+                    </div>
+
+                    <div className="p-4 sm:p-5 rounded-2xl bg-slate-50/70 border border-slate-100 flex items-center gap-4">
+                      <div className="h-12 w-12 rounded-2xl bg-amber-50 flex items-center justify-center text-amber-600 shadow-sm shrink-0">
+                        <Bookmark size={24} />
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Places Saved</p>
+                        <h4 className="text-2xl font-black text-slate-900">{user.stats.placesSaved}</h4>
+                      </div>
+                    </div>
+
+                    <div className="p-4 sm:p-5 rounded-2xl bg-slate-50/70 border border-slate-100 flex items-center gap-4">
+                      <div className="h-12 w-12 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-600 shadow-sm shrink-0">
+                        <Award size={24} />
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Miles Traveled</p>
+                        <h4 className="text-2xl font-black text-slate-900">{user.stats.milesTraveled}</h4>
+                      </div>
+                    </div>
+
+                    <div className="p-4 sm:p-5 rounded-2xl bg-slate-50/70 border border-slate-100 flex items-center gap-4">
+                      <div className="h-12 w-12 rounded-2xl bg-emerald-50 flex items-center justify-center text-emerald-600 shadow-sm shrink-0">
+                        <Globe size={24} />
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Countries Visited</p>
+                        <h4 className="text-2xl font-black text-slate-900">{user.stats.countriesVisited}</h4>
+                      </div>
                     </div>
                   </div>
+                </motion.div>
+              )}
 
-                  <div className="settings-field">
-                    <label>TRAVELER VIBE</label>
-                    <div className="input-box bg-blue-tint">
-                      <i className="fa-solid fa-globe text-blue"></i>
-                      <span className="vibe-text">{user.vibe}</span>
+              {/* ACHIEVEMENTS TAB (COMPACT & PROPORTIONED) */}
+              {activeTab === 'Achievements' && (
+                <motion.div
+                  key="achievements"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.2 }}
+                  className="max-w-2xl bg-white rounded-[28px] p-6 sm:p-8 border border-slate-100 shadow-xl space-y-6"
+                >
+                  <div className="border-b border-slate-100 pb-5">
+                    <h2 className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">
+
+                      <span>Achievements & Badges</span>
+                    </h2>
+                    <p className="text-slate-500 text-xs sm:text-sm">Badges earned by discovering places and engaging with explorers.</p>
+                  </div>
+
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-4">
+                    {user.badges.map(badge => {
+                      const IconComponent = badge.name === "Early Bird" ? Sun : (badge.name === "Foodie" ? Utensils : Compass);
+                      const badgeColor = badge.name === "Early Bird" ? "bg-amber-50 text-amber-500 border-amber-100" : (badge.name === "Foodie" ? "bg-rose-50 text-rose-500 border-rose-100" : "bg-sky-50 text-sky-500 border-sky-100");
+
+                      return (
+                        <motion.div
+                          whileHover={{ scale: 1.04 }}
+                          key={badge.id}
+                          title={badge.name}
+                          className="flex flex-col items-center justify-center p-4 rounded-2xl border border-slate-100 bg-slate-50/50 hover:bg-white hover:shadow-lg transition-all duration-300 text-center group cursor-pointer"
+                        >
+                          <div className={`h-12 w-12 rounded-xl ${badgeColor} flex items-center justify-center mb-2.5 group-hover:scale-110 transition-transform shadow-sm`}>
+                            <IconComponent size={22} />
+                          </div>
+                          <span className="text-xs font-bold text-slate-800 leading-tight">{badge.name}</span>
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                </motion.div>
+              )}
+
+              {/* TRAVEL JOURNAL TAB (COMPACT NOTEBOOK UI) */}
+              {activeTab === 'Travel Journal' && (
+                <motion.div
+                  key="journal"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.2 }}
+                  className="max-w-2xl bg-white rounded-[28px] p-6 sm:p-8 border border-slate-100 shadow-xl space-y-5 flex flex-col"
+                >
+                  <div className="border-b border-slate-100 pb-5">
+                    <h2 className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">
+
+                      <span>Travel Journal</span>
+                    </h2>
+                    <p className="text-slate-500 text-xs sm:text-sm">Keep track of your feelings, goals, and notes for upcoming trips.</p>
+                  </div>
+
+                  {isWritingJournal ? (
+                    <div className="space-y-4 flex flex-col flex-1">
+                      <textarea
+                        autoFocus
+                        rows={5}
+                        placeholder="What are your thoughts or packing reminders for your next trip?"
+                        value={journalEntry}
+                        onChange={(e) => setJournalEntry(e.target.value)}
+                        className="w-full p-4 rounded-2xl border border-slate-200 bg-slate-50 text-slate-800 font-medium text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition-all resize-none"
+                      />
+                      <div className="flex items-center justify-end gap-3 pt-1">
+                        <button
+                          onClick={() => setIsWritingJournal(false)}
+                          className="py-2.5 px-5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold transition-all"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={handleSaveJournal}
+                          className="py-2.5 px-6 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold shadow-md shadow-sky-100 transition-all"
+                        >
+                          Save Entry
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                </div>
+                  ) : savedJournal ? (
+                    <div className="space-y-5 flex flex-col flex-1">
+                      <div className="p-6 rounded-2xl bg-sky-50/50 border border-sky-100 text-slate-700 italic text-sm leading-relaxed shadow-sm">
+                        "{savedJournal}"
+                      </div>
+                      <button
+                        onClick={() => setIsWritingJournal(true)}
+                        className="w-full py-3 rounded-xl bg-slate-50 hover:bg-sky-50 hover:text-sky-600 text-slate-700 font-bold text-xs flex items-center justify-center gap-2 border border-slate-200 hover:border-sky-200 transition-all mt-auto"
+                      >
+                        <Pen size={14} />
+                        <span>Edit Journal Entry</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-5 flex flex-col items-center justify-center text-center py-8">
+                      <div className="h-14 w-14 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center shadow-sm">
+                        <BookOpen size={28} />
+                      </div>
+                      <div className="max-w-sm space-y-1.5">
+                        <h4 className="text-base font-bold text-slate-900">No Journal Entries Yet</h4>
+                        <p className="text-xs font-medium text-slate-500 leading-relaxed">
+                          Start recording packing lists and travel aspirations for your next trip!
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => setIsWritingJournal(true)}
+                        className="py-3 px-6 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs shadow-lg shadow-sky-100 flex items-center justify-center gap-2 transition-all"
+                      >
+                        <Pen size={14} />
+                        <span>Write Your First Entry</span>
+                      </button>
+                    </div>
+                  )}
+                </motion.div>
+              )}
 
-                <div className="privacy-section" onClick={handlePrivacySettings}>
-                  <div className="privacy-icon bg-gray-light">
-                    <i className="fa-solid fa-shield-halved text-gray"></i>
-                  </div>
-                  <div className="privacy-info">
-                    <h4>Privacy & Security</h4>
-                    <p>Manage password and account access</p>
-                  </div>
-                  <div className="privacy-arrow">
-                    <i className="fa-solid fa-chevron-right text-gray-light"></i>
-                  </div>
-                </div>
-              </section>
-            )}
+              {/* BUCKET LIST TAB (COMPACT SNAPPY CHECKLIST) */}
+              {activeTab === 'Bucket List' && (
+                <motion.div
+                  key="bucket"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.2 }}
+                  className="max-w-2xl bg-white rounded-[28px] p-6 sm:p-8 border border-slate-100 shadow-xl space-y-5 flex flex-col"
+                >
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-5">
+                    <div>
+                      <h2 className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">
 
+                        <span>Your Bucket List</span>
+                      </h2>
+                      <p className="text-slate-500 text-xs sm:text-sm">Check off dream destinations and plan adventures.</p>
+                    </div>
+
+                  </div>
+
+                  <form onSubmit={handleAddBucketItem} className="flex items-center gap-2.5 pb-1">
+                    <input
+                      type="text"
+                      placeholder="Add a dream city or landmark..."
+                      value={newBucketItem}
+                      onChange={(e) => setNewBucketItem(e.target.value)}
+                      className="flex-1 p-3 px-4 rounded-xl border border-slate-200 bg-slate-50 font-medium text-xs sm:text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition-all shadow-sm"
+                    />
+                    <button
+                      type="submit"
+                      className="px-5 py-3 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs sm:text-sm transition-all shadow-md shadow-sky-100 flex items-center gap-1.5 shrink-0"
+                    >
+                      <Send size={16} />
+                      <span>Add</span>
+                    </button>
+                  </form>
+
+                  <ul className="space-y-2.5 max-h-[360px] overflow-y-auto pr-1 no-scrollbar pt-1">
+                    {bucketList.map(item => (
+                      <li
+                        key={item.id}
+                        onClick={() => toggleBucketList(item.id)}
+                        className={`flex items-center gap-3.5 p-3.5 px-4 rounded-xl border transition-all cursor-pointer select-none ${item.completed
+                          ? 'bg-slate-50 border-slate-100 text-slate-400 line-through'
+                          : 'bg-white border-slate-200/80 hover:border-sky-300 text-slate-800 font-bold shadow-sm hover:shadow-md'
+                          }`}
+                      >
+                        <div className={`h-6 w-6 rounded-lg flex items-center justify-center shrink-0 transition-colors ${item.completed ? 'bg-sky-600 text-white shadow-sm' : 'border-2 border-slate-300 bg-white'
+                          }`}>
+                          {item.completed && <Check size={14} strokeWidth={3} />}
+                        </div>
+                        <span className="text-sm sm:text-base flex-1">{item.place}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </motion.div>
+              )}
+
+            </AnimatePresence>
           </div>
+
         </div>
-      </main>
+      </div>
     </div>
   );
 };
 
 const ProfileWrapper = () => {
-  const { user } = useUser();
+  const { user, profile } = useUser();
+  const userAvatar = profile?.avatar_url || user?.user_metadata?.avatar_url || user?.user_metadata?.picture || "https://api.dicebear.com/7.x/avataaars/svg?seed=" + (user?.email || "adventurer");
+
   const mockUser = {
     navName: user?.user_metadata?.full_name || "Guest Explorer",
-    navAvatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100&auto=format&fit=crop",
+    navAvatar: userAvatar,
     coverImage: "https://images.unsplash.com/photo-1503220317375-aaad61436b1b?q=80&w=1200&auto=format&fit=crop",
-    avatarImage: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=300&auto=format&fit=crop",
+    avatarImage: userAvatar,
     profileName: user?.user_metadata?.full_name || "Guest Explorer",
     location: "Global Nomad",
     joinedDate: "Joined April 2026",
@@ -1154,9 +698,9 @@ const ProfileWrapper = () => {
       countriesVisited: 8
     },
     badges: [
-      { id: 1, name: "Early Bird", icon: "fa-sun", color: "text-purple" },
-      { id: 2, name: "Foodie", icon: "fa-utensils", color: "text-red" },
-      { id: 3, name: "Explorer", icon: "fa-compass", color: "text-blue" }
+      { id: 1, name: "Early Bird" },
+      { id: 2, name: "Foodie" },
+      { id: 3, name: "Explorer" }
     ],
     bucketList: [
       { id: 1, place: "See Northern Lights in Iceland", completed: true },
@@ -1164,7 +708,7 @@ const ProfileWrapper = () => {
       { id: 3, place: "Eat pizza in Naples, Italy", completed: false }
     ],
     upcomingTrips: [
-      { id: 1, destination: "Tokyo, Japan", date: "Nov 12 - Nov 20, 2024", image: "https://images.unsplash.com/photo-1513407030348-c983a97b98d8?fm=jpg&q=60&w=3000&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8Mnx8dG9reW98ZW58MHx8MHx8fDA%3D", status: "READY", daysUntil: 45, weather: "18°C" }
+      { id: 1, destination: "Tokyo, Japan", date: "Nov 12 - Nov 20, 2026", image: "https://images.unsplash.com/photo-1513407030348-c983a97b98d8?fm=jpg&q=60&w=3000&auto=format&fit=crop", status: "READY", daysUntil: 45, weather: "18°C" }
     ],
     visitedPins: [
       { id: 1, name: "Paris", lat: 48.8566, lng: 2.3522 },
@@ -1172,9 +716,9 @@ const ProfileWrapper = () => {
       { id: 3, name: "Tokyo", lat: 35.6762, lng: 139.6503 }
     ],
     recentMemories: [
-      { id: 1, title: "Sunset at Eiffel", location: "Paris, France", date: "Oct 2023", image: "https://images.unsplash.com/photo-1502602898657-3e91760cbb34?q=80&w=600", likes: 124 },
-      { id: 2, title: "Central Park Stroll", location: "NYC, USA", date: "Dec 2023", image: "https://images.unsplash.com/photo-1568515387631-8b650bbcdb90?q=80&w=600", likes: 89 },
-      { id: 3, title: "Sushi Night", location: "Tokyo, Japan", date: "Mar 2024", image: "https://images.unsplash.com/photo-1553621042-f6e147245754?q=80&w=600", likes: 210 }
+      { id: 1, title: "Sunset at Eiffel", location: "Paris, France", date: "Oct 2025", image: "https://images.unsplash.com/photo-1502602898657-3e91760cbb34?q=80&w=600", likes: 124 },
+      { id: 2, title: "Central Park Stroll", location: "NYC, USA", date: "Dec 2025", image: "https://images.unsplash.com/photo-1568515387631-8b650bbcdb90?q=80&w=600", likes: 89 },
+      { id: 3, title: "Sushi Night", location: "Tokyo, Japan", date: "Mar 2026", image: "https://images.unsplash.com/photo-1553621042-f6e147245754?q=80&w=600", likes: 210 }
     ]
   };
 
