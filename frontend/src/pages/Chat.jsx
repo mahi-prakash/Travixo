@@ -1254,15 +1254,17 @@ export default function Chat() {
     setShowOnboarding(false);
 
     // 💡 SHADOW COPY: Extract raw values to avoid closure staleness
-    const { destination, days, budget, tripName, people, vibe, origin, arrivalStation, arrivalTime, departureStation, departureTime, hotelAddress, isExploring } = onboardingData;
+    const { destination, days, budget, tripName, people, vibe, origin, arrivalStation, arrivalTime, departureStation, departureTime, hotelAddress, isExploring, mustVisitPlaces } = onboardingData;
 
     try {
+      try { sessionStorage.setItem('STEP_ONE_MUST_VISIT', JSON.stringify(mustVisitPlaces || [])); } catch(e) {}
       const heroImage = await api.unsplash.fetchPhoto(destination || tripName || "Travel");
       const tripPayload = {
         title: tripName || (destination ? `${destination} Adventure` : `Surprise Trip`),
         destination: destination || "Unknown",
         start_date: new Date().toISOString().split("T")[0],
-        image: heroImage
+        image: heroImage,
+        must_visit: mustVisitPlaces || []
       };
 
       const newTrip = await createTrip(tripPayload);
@@ -1610,6 +1612,7 @@ export default function Chat() {
                                             ? mustVisit.filter(p => p !== place.name)
                                             : [...mustVisit, place.name];
                                           setOnboardingData({ ...onboardingData, mustVisitPlaces: newPlaces });
+                                          try { sessionStorage.setItem('STEP_ONE_MUST_VISIT', JSON.stringify(newPlaces)); } catch(e) {}
                                         }}
                                         className={`w-full text-left text-[12px] px-2.5 py-1.5 rounded-md transition-all flex items-center justify-between ${isSelected ? 'bg-sky-50 text-sky-700 font-semibold border border-sky-200' : 'text-slate-700 hover:bg-slate-50 border border-transparent'}`}
                                       >

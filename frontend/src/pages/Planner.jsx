@@ -24,7 +24,6 @@ import {
   Maximize2,
   Trash,
   Move,
-  CheckCircle2,
   Settings,
   HelpCircle,
   GripVertical,
@@ -40,8 +39,8 @@ import {
   RotateCcw,
   Undo2,
   SlidersHorizontal,
-  Hotel,
-  Train
+  Train,
+  Bookmark
 } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import {
@@ -60,8 +59,31 @@ import { useUser } from '../context/UserContext';
 import Dropdown from '../components/common/Dropdown';
 import SEO from '../components/common/SEO';
 import { GOOGLE_MAPS_API_KEY } from '../utils/googleMaps';
+import { fetchPhoto } from '../utils/unsplash';
 
 const googleLibraries = ['places'];
+
+// ⚡ Cache Engine: Stores Google Places & Unsplash results in browser memory and sessionStorage!
+// This eliminates repetitive API calls and speeds up tab/filter switching without touching the backend DB.
+const nearbyPlacesCache = {};
+const getCachedNearby = (key) => {
+  if (nearbyPlacesCache[key]) return nearbyPlacesCache[key];
+  try {
+    const cached = sessionStorage.getItem(key);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      nearbyPlacesCache[key] = parsed;
+      return parsed;
+    }
+  } catch (e) { /* ignore storage error */ }
+  return null;
+};
+const setCachedNearby = (key, data) => {
+  nearbyPlacesCache[key] = data;
+  try {
+    sessionStorage.setItem(key, JSON.stringify(data));
+  } catch (e) { /* ignore storage error */ }
+};
 
 const containerStyle = {
   width: "100%",
@@ -204,10 +226,6 @@ const initialDays = {
   },
 };
 
-const savedPlaces = [];
-
-
-
 // --- Helpers ---
 
 const getItemIcon = (type) => {
@@ -326,16 +344,55 @@ export default function Planner() {
     aiSourceForCheck &&
     JSON.stringify(activeTrip.itinerary) !== JSON.stringify(aiSourceForCheck);
 
-  // 🌍 Dynamic Nearby Places from AI
+  // 🌍 Dynamic Nearby Places from AI & Step 1 Must-Visit Selections
   const activeItinerary = activeTrip?.itinerary || (itineraryCache || {})[activeTripId] || {};
   const aiSourceForNearby = activeTrip?.ai_itinerary || (aiItineraryCache || {})[activeTripId];
-  const aiNearbyPlaces = activeItinerary.nearby_places || aiSourceForNearby?.nearby_places || [];
+  const rawAiNearby = activeItinerary.nearby_places || aiSourceForNearby?.nearby_places || [];
+
+  // 🎯 Immediately inject spots clicked by the user during Step 1 / Onboarding
+  const stepOnePicks = useMemo(() => {
+    let spots = activeTrip?.must_visit || activeTrip?.mustVisitPlaces || activeItinerary?.must_visit || [];
+    if (!spots.length) {
+      try {
+        const fromSession = JSON.parse(sessionStorage.getItem('STEP_ONE_MUST_VISIT') || '[]');
+        if (Array.isArray(fromSession) && fromSession.length) spots = fromSession;
+      } catch (e) { /* ignore */ }
+    }
+    return spots.map((spot, idx) => {
+      if (typeof spot === 'object' && spot !== null) return spot;
+      return {
+        id: `step1-pick-${idx}-${spot}`,
+        title: spot,
+        name: spot,
+        category: "STEP 1 PICK 📌",
+        rating: "5.0",
+        desc: `A popular must-visit attraction you explicitly selected during Step 1!`,
+        img: "https://images.unsplash.com/photo-1526772662000-3f88f10405ff?q=80&w=600&auto=format&fit=crop",
+        isStepOnePick: true
+      };
+    });
+  }, [activeTrip, activeItinerary]);
+
+  const aiNearbyPlaces = useMemo(() => {
+    const list = [...stepOnePicks, ...rawAiNearby];
+    const seen = new Set();
+    return list.filter(item => {
+      const nameKey = (item?.name || item?.title || "").toLowerCase().trim();
+      if (!nameKey || seen.has(nameKey)) return false;
+      seen.add(nameKey);
+      return true;
+    });
+  }, [stepOnePicks, rawAiNearby]);
 
   const [days, setDays] = useState({});
   const [placePool, setPlacePool] = useState([]); // Drafts / Unassigned places
+  const savedPlaces = placePool; // Direct mirror for drafts and unscheduled holding bucket
   const [planMode, setPlanMode] = useState("user");
   const [selectedDayId, setSelectedDayId] = useState("all");
-  const [activeTab, setActiveTab] = useState("nearby");
+  const [activeTab, setActiveTab] = useState("popular");
+  // 🌟 Google Places Popular Spots (Combined Sights + Dining) + Free Unsplash Integration
+  const [livePopularPlaces, setLivePopularPlaces] = useState([]);
+  const [isLoadingPopular, setIsLoadingPopular] = useState(false);
   const [collapsedDays, setCollapsedDays] = useState({});
   const [selectedPlace, setSelectedPlace] = useState(null);
   const [hoveredMarkerId, setHoveredMarkerId] = useState(null);
@@ -343,7 +400,6 @@ export default function Planner() {
   const [addingPlace, setAddingPlace] = useState(null);
   const [addFeedback, setAddFeedback] = useState(null);
   const [editingTimeId, setEditingTimeId] = useState(null);
-  const [isCompleted, setIsCompleted] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [logistics, setLogistics] = useState({});
@@ -351,6 +407,20 @@ export default function Planner() {
   const [baseCampHotel, setBaseCampHotel] = useState(null);
   const [baseCampStation, setBaseCampStation] = useState(null);
   const autocompleteRef = useRef(null);
+  const [destinationCoords, setDestinationCoords] = useState(null);
+
+  // 🌍 Geocode Actual Trip Destination: Never fall back to Paris if pins aren't loaded yet!
+  useEffect(() => {
+    const destName = activeTrip?.destination || activeTrip?.name?.split(' ')[0] || activeTrip?.title?.split(' ')[0];
+    if (!destName || !window.google?.maps?.Geocoder) return;
+    const geocoder = new window.google.maps.Geocoder();
+    geocoder.geocode({ address: destName }, (results, status) => {
+      if (status === "OK" && results?.[0]?.geometry?.location) {
+        const loc = results[0].geometry.location;
+        setDestinationCoords({ lat: loc.lat(), lng: loc.lng() });
+      }
+    });
+  }, [activeTrip?.destination, activeTrip?.name, activeTrip?.title, isLoaded]);
 
   // 🚗 Fetch Logistics (Distances & Times)
   useEffect(() => {
@@ -369,7 +439,7 @@ export default function Planner() {
           routingItems.unshift({ ...baseCampHotel, id: `basecamp-start-${dayId}` });
           routingItems.push({ ...baseCampHotel, id: `basecamp-end-${dayId}` });
         }
-        
+
         for (let i = 0; i < routingItems.length - 1; i++) {
           const itemA = routingItems[i];
           const itemB = routingItems[i + 1];
@@ -377,7 +447,7 @@ export default function Planner() {
 
           const latA = itemA.coords?.[0] ?? itemA.lat ?? itemA.location?.lat;
           const lngA = itemA.coords?.[1] ?? itemA.lng ?? itemA.location?.lng;
-          
+
           const latB = itemB.coords?.[0] ?? itemB.lat ?? itemB.location?.lat;
           const lngB = itemB.coords?.[1] ?? itemB.lng ?? itemB.location?.lng;
 
@@ -486,19 +556,19 @@ export default function Planner() {
     if (!unsavedRef.current || isSaving) {
       return;
     }
-    
+
     setIsSaving(true);
     try {
       const currentItin = activeTrip?.itinerary || {};
       const response = await updateTripItinerary(tripIdRef.current, { ...currentItin, days: daysRef.current });
-      
+
       if (response && response.error) {
         throw new Error(response.error.message);
       }
 
       setHasUnsavedChanges(false);
       unsavedRef.current = false; // Manually sync the ref instantly
-      
+
       alert("Plan saved successfully!");
     } catch (err) {
       console.error(err);
@@ -591,18 +661,6 @@ export default function Planner() {
 
 
 
-  // Review Modal State
-  const [reviewingItem, setReviewingItem] = useState(null);
-  const [reviewForm, setReviewForm] = useState({
-    rating: 0,
-    facility_quality: 0,
-    budget_friendly: 0,
-    personal_experience: 0,
-    review_text: ""
-  });
-  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
-
-
   // Helper to format the permanent AI backup into Planner-friendly structure
   const getAiVersion = () => {
     // 🛡️ Always pull from the immutable backup (ai_itinerary), fallback to itinerary for legacy trips
@@ -687,7 +745,7 @@ export default function Planner() {
     if (source.droppableId === "place-pool" && destination.droppableId !== "place-pool") {
       const newPool = Array.from(placePool);
       const [moved] = newPool.splice(source.index, 1);
-      
+
       const destDay = days[destination.droppableId];
       const newItems = Array.from(destDay.items || []);
       newItems.splice(destination.index, 0, moved);
@@ -866,58 +924,6 @@ export default function Planner() {
     setTimeout(() => setAddFeedback(null), 3000);
   };
 
-
-  const updateItemRating = (dayId, itemId, rating) => {
-    if (isReadOnly) return;
-    setDays(prev => ({
-      ...prev,
-      [dayId]: {
-        ...prev[dayId],
-        items: (prev[dayId]?.items || []).filter(item => item && item.id).map(item =>
-          item.id === itemId ? { ...item, rating } : item
-        )
-      }
-    }));
-  };
-
-  const submitPlaceReview = async () => {
-    if (!reviewForm.rating || !reviewForm.facility_quality || !reviewForm.budget_friendly || !reviewForm.personal_experience) {
-      alert("Please fill in all the star ratings!");
-      return;
-    }
-
-    setIsSubmittingReview(true);
-    try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/reviews`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({
-          place_id: reviewingItem.id, // Using item ID as place_id for now
-          trip_id: activeTripId,
-          place_name: reviewingItem.title,
-          place_category: reviewingItem.category,
-          ...reviewForm
-        })
-      });
-
-      if (!res.ok) throw new Error("Failed to submit review");
-
-      // Visually update the item rating in the UI
-      updateItemRating(reviewingItem.dayId, reviewingItem.id, reviewForm.rating);
-
-      setReviewingItem(null);
-      setReviewForm({ rating: 0, facility_quality: 0, budget_friendly: 0, personal_experience: 0, review_text: "" });
-    } catch (err) {
-      console.error(err);
-      alert("Error submitting review. Please try again.");
-    } finally {
-      setIsSubmittingReview(false);
-    }
-  };
-
   const addDay = () => {
     if (isReadOnly) return;
     pushToHistory();
@@ -988,16 +994,20 @@ export default function Planner() {
     }
   });
 
-  // 🗺️ Automated Map Camera: Fits all pins into view
+  // 🗺️ Automated Map Camera: Fits all pins into view or pans directly to trip destination!
   useEffect(() => {
-    if (map && mapMarkers.length > 0 && window.google) {
+    if (!map || !window.google) return;
+    if (mapMarkers.length > 0) {
       const bounds = new window.google.maps.LatLngBounds();
       mapMarkers.forEach(marker => {
         bounds.extend({ lat: marker.pos[0], lng: marker.pos[1] });
       });
       map.fitBounds(bounds, { padding: 80 });
+    } else if (destinationCoords) {
+      map.panTo(destinationCoords);
+      map.setZoom(13);
     }
-  }, [map, mapMarkers]);
+  }, [map, mapMarkers, destinationCoords]);
 
   const [directions, setDirections] = useState(null);
 
@@ -1039,6 +1049,107 @@ export default function Planner() {
       }
     );
   }, [mapMarkers, selectedDayId]);
+
+  // 🌟 Google Places Popular Spots Search + Free Unsplash Photo Integration (Zero Google Photo Costs!)
+  const searchLat = mapMarkers[0]?.pos?.[0] || destinationCoords?.lat || baseCampHotel?.lat || map?.getCenter()?.lat() || null;
+  const searchLng = mapMarkers[0]?.pos?.[1] || destinationCoords?.lng || baseCampHotel?.lng || map?.getCenter()?.lng() || null;
+
+  useEffect(() => {
+    if (activeTab !== "popular" || !map || !window.google?.maps?.places) {
+      return;
+    }
+
+    let isMounted = true;
+
+    // ⚡ 1. CHECK CACHE FIRST: Zero API calls if already fetched in this session!
+    const cacheKey = `popular_spots_${activeTripId || 'default'}`;
+    const cachedData = getCachedNearby(cacheKey);
+    if (cachedData && Array.isArray(cachedData)) {
+      setLivePopularPlaces(cachedData);
+      setIsLoadingPopular(false);
+      return;
+    }
+
+    setIsLoadingPopular(true);
+    const service = new window.google.maps.places.PlacesService(map);
+
+    let searchCenter = null;
+    if (searchLat && searchLng) {
+      searchCenter = { lat: Number(searchLat), lng: Number(searchLng) };
+    } else if (map.getCenter()) {
+      searchCenter = map.getCenter();
+    }
+
+    if (!searchCenter) {
+      setIsLoadingPopular(false);
+      return;
+    }
+
+    // 🌟 COMBINED QUERY: Automatically gather sights, dining, and landmarks, then sort by user ratings & reviews!
+    const categoriesToFetch = ['tourist_attraction', 'restaurant'];
+    const fetchPromises = categoriesToFetch.map(type => new Promise(resolve => {
+      service.nearbySearch({
+        location: searchCenter,
+        radius: 6500,
+        type: type
+      }, (results, status) => {
+        if (status === window.google.maps.places.PlacesServiceStatus.OK && results) {
+          resolve(results);
+        } else {
+          resolve([]);
+        }
+      });
+    }));
+
+    Promise.all(fetchPromises).then(async (resultsArrays) => {
+      if (!isMounted) return;
+
+      const allResults = resultsArrays.flat();
+      const seenIds = new Set();
+      const uniqueResults = allResults.filter(p => {
+        if (!p.place_id || seenIds.has(p.place_id)) return false;
+        seenIds.add(p.place_id);
+        return true;
+      });
+
+      // 🌟 POPULARITY RANKING: Sort descending by prominence (rating combined with review volume)
+      const sortedPopular = uniqueResults.sort((a, b) => {
+        const scoreA = (a.rating || 4.0) * Math.log10((a.user_ratings_total || 10) + 10);
+        const scoreB = (b.rating || 4.0) * Math.log10((b.user_ratings_total || 10) + 10);
+        return scoreB - scoreA;
+      });
+
+      // Keep the top 8 most prominent attractions & restaurants in town!
+      const topResults = sortedPopular.slice(0, 8);
+
+      const enhancedPlaces = await Promise.all(
+        topResults.map(async (p, idx) => {
+          const query = `${p.name} ${p.types?.[0]?.replace(/_/g, ' ') || ''} ${activeTrip?.name?.split(' ')[0] || ''}`.trim();
+          const photoUrl = await fetchPhoto(query);
+          return {
+            id: p.place_id || `google-popular-${idx}-${Date.now()}`,
+            title: p.name,
+            name: p.name,
+            category: (p.types?.[0] || "Explore").replace(/_/g, ' ').toUpperCase(),
+            rating: p.rating || (4.5 + (idx % 5) * 0.1).toFixed(1),
+            desc: p.vicinity || `One of the highest-rated popular destinations near your journey route!`,
+            img: photoUrl || "https://images.unsplash.com/photo-1488646953014-85cb44e25828?q=80&w=600&auto=format&fit=crop",
+            coords: p.geometry?.location ? [p.geometry.location.lat(), p.geometry.location.lng()] : null,
+            isGooglePlace: true
+          };
+        })
+      );
+
+      if (isMounted) {
+        // ⚡ SAVE TO CACHE: Ensure subsequent clicks on this tab are instant!
+        setCachedNearby(cacheKey, enhancedPlaces);
+        setLivePopularPlaces(enhancedPlaces);
+        setIsLoadingPopular(false);
+      }
+    });
+
+    return () => { isMounted = false; };
+  }, [activeTab, map, searchLat, searchLng, activeTrip?.name, activeTripId]);
 
   // 🎨 Custom SVG Marker Generator - Clean Circle for Native Labeling
   const getMarkerIcon = (color, isFocused) => {
@@ -1087,45 +1198,21 @@ export default function Planner() {
                   <h2 className="text-[28px] font-bold text-slate-800 tracking-tight">Itinerary</h2>
 
                   {/* Current Trip Display */}
-                  <div className="flex items-center gap-1.5 px-0.5 py-0.5">
-                    <span className="text-slate-400 text-[10px] font-black uppercase tracking-[0.2em]">
-                      {"(" + (activeTrip?.title || activeTrip?.name || "New Trip") + ")"}
-                    </span>
-                  </div>
+
                 </div>
 
 
                 {/* CONTROL POSITION: Adjust 'translate-y-[0px]' to move these buttons up or down */}
                 <div className="flex items-center gap-2 relative translate-y-[-4px]">
-                  {/* Plan Toggle */}
-                  <div className="flex p-1 bg-slate-100/30 backdrop-blur-md rounded-2xl border border-slate-200/50 shadow-sm h-9 items-center">
-                    <button
-                      onClick={() => setPlanMode('ai')}
-                      className={`h-full px-4 text-[9.5px] font-black rounded-2xl transition-all flex items-center gap-2 ${planMode === 'ai' ? 'bg-white shadow-sm text-slate-600 border border-slate-200/50' : 'text-slate-400 hover:text-slate-600'}`}
-                    >
-                      AI PLAN
-                    </button>
-                    <button
-                      onClick={() => setPlanMode('user')}
-                      className={`h-full px-4 text-[9.5px] font-black rounded-2xl transition-all flex items-center gap-2 ${planMode === 'user' ? 'bg-white shadow-sm text-slate-600 border border-slate-200/50' : 'text-slate-400 hover:text-slate-600'}`}
-                    >
-                      YOUR PLAN
-                    </button>
-                  </div>
-
-
-
-
                   {/* Save Changes Button */}
                   {planMode === 'user' && (
                     <button
                       onClick={saveChanges}
                       disabled={!hasUnsavedChanges || isSaving}
-                      className={`px-4 h-9 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
-                        hasUnsavedChanges 
-                          ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-md shadow-emerald-500/20 scale-105' 
-                          : 'bg-slate-100/50 text-slate-400 border border-slate-200/50 hover:bg-slate-100 cursor-not-allowed'
-                      }`}
+                      className={`px-4 h-9 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${hasUnsavedChanges
+                        ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-md shadow-emerald-500/20 scale-105'
+                        : 'bg-slate-100/50 text-slate-400 border border-slate-200/50 hover:bg-slate-100 cursor-not-allowed'
+                        }`}
                     >
                       <Save size={14} className={isSaving ? "animate-pulse" : ""} />
                       {isSaving ? "Saving..." : "Save Changes"}
@@ -1196,6 +1283,24 @@ export default function Planner() {
                 </div>
               </div>
 
+              {/* Row 2: Centered Plan Toggle */}
+              <div className="flex justify-center relative z-20">
+                <div className="flex p-1 bg-slate-100/30 backdrop-blur-md rounded-2xl border border-slate-200/50 shadow-sm h-9 items-center">
+                  <button
+                    onClick={() => setPlanMode('ai')}
+                    className={`h-full px-4 text-[9.5px] font-black rounded-2xl transition-all flex items-center gap-2 ${planMode === 'ai' ? 'bg-white shadow-sm text-slate-600 border border-slate-200/50' : 'text-slate-400 hover:text-slate-600'}`}
+                  >
+                    AI PLAN
+                  </button>
+                  <button
+                    onClick={() => setPlanMode('user')}
+                    className={`h-full px-4 text-[9.5px] font-black rounded-2xl transition-all flex items-center gap-2 ${planMode === 'user' ? 'bg-white shadow-sm text-slate-600 border border-slate-200/50' : 'text-slate-400 hover:text-slate-600'}`}
+                  >
+                    YOUR PLAN
+                  </button>
+                </div>
+              </div>
+
               {/* Row 3: Integrated Day Filter Container */}
               <div className="p-2 bg-slate-100/20 backdrop-blur-md rounded-2xl border border-slate-200 shadow-md relative z-10">
 
@@ -1236,9 +1341,9 @@ export default function Planner() {
           </div>
 
           {/* Scrollable Timeline Container - Wrapped in Box to match Chat */}
-          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-4 no-scrollbar">
+          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-2 sm:px-4 no-scrollbar">
 
-            <div className="bg-white rounded-[32px] shadow-2xl border border-slate-200 p-6 space-y-2 min-h-full py-1 pb-28 relative">
+            <div className="bg-white rounded-[32px] shadow-2xl border border-slate-200 p-3 sm:p-5 space-y-2 min-h-full py-2 pb-6 relative overflow-hidden">
 
               <AnimatePresence>
                 {isGenerating && (
@@ -1331,61 +1436,7 @@ export default function Planner() {
                 </div>
               )}
 
-              {/* --- PLACE POOL (DRAFTS) --- */}
-              <div className="mb-8">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-amber-100 text-amber-600">
-                    <Star size={16} />
-                  </div>
-                  <div>
-                    <h3 className="font-extrabold text-slate-800 text-lg tracking-tight">Drafts & Suggestions</h3>
-                    <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Unassigned Places</p>
-                  </div>
-                </div>
-                
-                <Droppable droppableId="place-pool">
-                  {(provided, snapshot) => (
-                    <div
-                      ref={provided.innerRef}
-                      {...provided.droppableProps}
-                      className={`min-h-[100px] p-4 rounded-3xl border-2 border-dashed transition-all ${
-                        snapshot.isDraggingOver ? "bg-amber-50/50 border-amber-300" : "bg-slate-50 border-slate-200"
-                      }`}
-                    >
-                      {placePool.map((item, index) => (
-                        <Draggable
-                          key={item.id}
-                          draggableId={item.id}
-                          index={index}
-                          isDragDisabled={planMode !== "user"}
-                        >
-                          {(provided, snapshot) => (
-                            <div
-                              ref={provided.innerRef}
-                              {...provided.draggableProps}
-                              {...provided.dragHandleProps}
-                              className={`mb-3 last:mb-0 ${snapshot.isDragging ? "opacity-90 scale-[1.02] z-50" : ""}`}
-                            >
-                              <div className="flex bg-white rounded-2xl shadow-sm border border-slate-100 p-3 hover:shadow-md transition-shadow">
-                                  <div className="flex-1">
-                                    <p className="font-bold text-sm text-slate-800">{item.title || item.name}</p>
-                                    <p className="text-xs text-slate-500 line-clamp-1">{item.desc}</p>
-                                  </div>
-                              </div>
-                            </div>
-                          )}
-                        </Draggable>
-                      ))}
-                      {provided.placeholder}
-                      {placePool.length === 0 && (
-                        <div className="text-center text-slate-400 text-xs py-4">
-                          Drag places here to remove them from a day, or see AI suggestions here.
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </Droppable>
-              </div>
+
 
               {visibleDays.map((dayId, dayIdx) => {
                 const day = displayDays[dayId];
@@ -1414,20 +1465,20 @@ export default function Planner() {
                           initial={{ opacity: 0, height: 0 }}
                           animate={{ opacity: 1, height: "auto" }}
                           exit={{ opacity: 0, height: 0 }}
-                          className="overflow-visible"
+                          className="overflow-hidden w-full min-w-0"
                         >
                           <Droppable droppableId={dayId} type="item">
                             {(provided, snapshot) => (
                               <div
                                 {...provided.droppableProps}
                                 ref={provided.innerRef}
-                                className={`transition-all min-h-[10px] pb-1 ${snapshot.isDraggingOver ? "bg-slate-50/50 rounded-3xl ring-2 ring-dashed ring-slate-200" : ""
+                                className={`transition-all min-h-[10px] pb-1 w-full min-w-0 ${snapshot.isDraggingOver ? "bg-slate-50/50 rounded-3xl ring-2 ring-dashed ring-slate-200" : ""
                                   }`}
                               >
                                 {/* ⛺ Base Camp Morning Start */}
                                 {baseCampHotel && day.items?.length > 0 && (
-                                  <div className="flex gap-4 items-stretch opacity-75">
-                                    <div className="flex flex-col items-center">
+                                  <div className="flex gap-2.5 sm:gap-4 items-stretch opacity-75 w-full min-w-0">
+                                    <div className="flex flex-col items-center shrink-0">
                                       <div className="h-5 w-5 rounded-full border-2 border-slate-300 bg-white flex items-center justify-center shrink-0 mt-4">
                                         <Hotel size={10} className="text-slate-400" />
                                       </div>
@@ -1440,9 +1491,9 @@ export default function Planner() {
                                         )}
                                       </div>
                                     </div>
-                                    <div className="flex-1 flex flex-col bg-white rounded-2xl px-6 py-4 border border-slate-100 mb-4 items-start justify-center">
+                                    <div className="flex-1 min-w-0 flex flex-col bg-white rounded-2xl p-4 sm:px-5 sm:py-4 border border-slate-100 mb-4 items-start justify-center overflow-hidden">
                                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Morning Start</p>
-                                      <p className="text-sm font-extrabold text-slate-700">{baseCampHotel.name}</p>
+                                      <p className="text-sm font-extrabold text-slate-700 truncate min-w-0 w-full">{baseCampHotel.name}</p>
                                     </div>
                                   </div>
                                 )}
@@ -1461,23 +1512,23 @@ export default function Planner() {
                                           ref={provided.innerRef}
                                           {...provided.draggableProps}
                                           {...provided.dragHandleProps}
-                                          className="flex gap-4 items-stretch"
+                                          className="flex gap-2 sm:gap-3.5 items-stretch w-full min-w-0"
                                         >
                                           {/* ── TIMELINE COLUMN ── */}
-                                          <div className="flex flex-col items-center">
+                                          <div className="flex flex-col items-center shrink-0">
                                             <div className="h-5 w-5 rounded-full border-2 border-sky-600 bg-sky-50 flex items-center justify-center shrink-0 mt-4">
                                               <Icon size={10} className="text-sky-600" />
                                             </div>
                                             {(!isLastInDay || (isLastInDay && baseCampHotel)) && (
                                               <div className="flex-1 relative flex justify-center mt-1 w-full min-h-[40px]">
                                                 <div className="w-px h-full border-l-2 border-dotted border-sky-300 absolute left-1/2 -translate-x-1/2" />
-                                                
+
                                                 {/* Logic for connecting to next item OR the evening base camp return */}
                                                 {(() => {
-                                                  const badgeData = isLastInDay && baseCampHotel 
-                                                    ? logistics[`${item.id}_basecamp-end-${dayId}`] 
+                                                  const badgeData = isLastInDay && baseCampHotel
+                                                    ? logistics[`${item.id}_basecamp-end-${dayId}`]
                                                     : logisticsData;
-                                                  
+
                                                   if (!badgeData) return null;
                                                   return (
                                                     <div className="absolute top-1/2 -translate-y-1/2 bg-white border border-sky-200 text-sky-600 text-[9px] px-2 py-0.5 rounded-full flex items-center shadow-sm whitespace-nowrap z-10 font-bold tracking-tight">
@@ -1494,16 +1545,16 @@ export default function Planner() {
                                             onClick={() => setSelectedPlace(item)}
                                             onMouseEnter={() => setHoveredMarkerId(item.id)}
                                             onMouseLeave={() => setHoveredMarkerId(null)}
-                                            className={`group relative flex-1 flex flex-col bg-white rounded-2xl px-6 py-4 shadow-xl border border-sky-100 hover:shadow-2xl hover:-translate-y-1 transition-all mb-4 cursor-pointer ${snapshot.isDragging ? "rotate-2 scale-105 z-50 shadow-2xl ring-2 ring-sky-400" : ""
+                                            className={`group relative flex-1 min-w-0 flex flex-col bg-white rounded-2xl p-4 sm:px-5 sm:py-4 shadow-xl border border-sky-100 hover:shadow-2xl hover:-translate-y-1 transition-all mb-4 cursor-pointer overflow-hidden ${snapshot.isDragging ? "rotate-2 scale-105 z-50 shadow-2xl ring-2 ring-sky-400" : ""
                                               } ${selectedPlace?.id === item.id ? "ring-2 ring-sky-400 shadow-md" : ""}`}
                                           >
 
 
 
                                             {/* 🔹 TOP ROW: Image + Essential Info */}
-                                            <div className="flex gap-4">
+                                            <div className="flex gap-3 min-w-0 w-full">
                                               {/* Image Thumbnail */}
-                                              <div className="w-16 h-16 rounded-xl overflow-hidden shrink-0 bg-slate-100 relative shadow-sm border border-slate-100">
+                                              <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl overflow-hidden shrink-0 bg-slate-100 relative shadow-sm border border-slate-100">
                                                 <img
                                                   src={item.img || `https://images.unsplash.com/photo-1488646953014-85cb44e25828?q=80&w=200&auto=format&fit=crop`}
                                                   alt={item.title}
@@ -1513,7 +1564,7 @@ export default function Planner() {
 
                                               {/* Content Area */}
                                               <div className="flex-1 min-w-0">
-                                                <div className="flex items-center gap-2 text-[10px] text-sky-600 font-bold uppercase tracking-wider mb-1">
+                                                <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-sky-600 font-bold uppercase tracking-wider mb-1 min-w-0">
                                                   {editingTimeId === item.id ? (
                                                     <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                                                       <input
@@ -1536,32 +1587,33 @@ export default function Planner() {
                                                           setEditingTimeId(item.id);
                                                         }
                                                       }}
-                                                      className="hover:text-sky-400 transition-colors"
+                                                      className="hover:text-sky-400 transition-colors shrink-0"
                                                     >
                                                       {item.time || "No Time"}
                                                     </span>
                                                   )}
                                                   <span>•</span>
-                                                  <div className="flex items-center gap-1">
-                                                    {(item.type === 'Hotel' || item.type === 'HOTEL') && <Hotel size={10} className="text-amber-500" />}
-                                                    {(item.type === 'Food' || item.type === 'FOOD') && <Utensils size={10} className="text-emerald-500" />}
-                                                    {(item.type === 'Sightseeing' || item.type === 'SIGHTSEEING' || item.type === 'ACTIVITY') && <Camera size={10} className="text-sky-500" />}
-                                                    {(item.type === 'FLIGHT' || item.type === 'DEPARTURE' || item.type === 'ARRIVAL') && <Plane size={10} className="text-blue-500" />}
-                                                    {(item.type === 'TRANSPORT') && <Navigation size={10} className="text-slate-500" />}
-                                                    <span className="capitalize">{item.type?.toLowerCase() || "Activity"}</span>
+                                                  <div className="flex items-center gap-1 min-w-0">
+                                                    {(item.type === 'Hotel' || item.type === 'HOTEL') && <Hotel size={10} className="text-amber-500 shrink-0" />}
+                                                    {(item.type === 'Food' || item.type === 'FOOD') && <Utensils size={10} className="text-emerald-500 shrink-0" />}
+                                                    {(item.type === 'Sightseeing' || item.type === 'SIGHTSEEING' || item.type === 'ACTIVITY') && <Camera size={10} className="text-sky-500 shrink-0" />}
+                                                    {(item.type === 'FLIGHT' || item.type === 'DEPARTURE' || item.type === 'ARRIVAL') && <Plane size={10} className="text-blue-500 shrink-0" />}
+                                                    {(item.type === 'TRANSPORT') && <Navigation size={10} className="text-slate-500 shrink-0" />}
+                                                    <span className="capitalize truncate min-w-0">{item.type?.toLowerCase() || "Activity"}</span>
                                                   </div>
                                                 </div>
 
-                                                <h4 className="font-bold text-slate-800 text-[14px] leading-tight group-hover:text-sky-700 transition-colors">{item.title}</h4>
+                                                <h4 className="font-bold text-slate-800 text-[14px] leading-tight group-hover:text-sky-700 transition-colors break-words min-w-0">{item.title}</h4>
 
-                                                <p className="text-[11px] text-slate-400 truncate mt-1 flex items-center gap-1 font-medium">
-                                                  <MapPin size={10} className="text-slate-300" /> {item.location}
-                                                </p>
+                                                <div className="text-[11px] text-slate-400 mt-1 flex items-center gap-1 font-medium min-w-0">
+                                                  <MapPin size={10} className="text-slate-300 shrink-0" />
+                                                  <span className="truncate min-w-0 flex-1">{item.location}</span>
+                                                </div>
 
                                                 {item.price_range && (
-                                                  <div className="flex items-center gap-1 text-[11px] font-bold text-slate-600 mt-1">
-                                                    <DollarSign size={10} className="text-slate-400" />
-                                                    {item.price_range}
+                                                  <div className="flex items-center gap-1 text-[11px] font-bold text-slate-600 mt-1 min-w-0">
+                                                    <DollarSign size={10} className="text-slate-400 shrink-0" />
+                                                    <span className="truncate min-w-0">{item.price_range}</span>
                                                   </div>
                                                 )}
                                               </div>
@@ -1569,7 +1621,7 @@ export default function Planner() {
                                               {/* Action Buttons */}
                                               {!isReadOnly && (
                                                 <button
-                                                  className="opacity-40 group-hover:opacity-100 p-3 rounded-full text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition-all self-start"
+                                                  className="opacity-40 group-hover:opacity-100 p-2 sm:p-2.5 rounded-full text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition-all shrink-0 self-start"
                                                   onClick={(e) => {
                                                     e.stopPropagation();
                                                     deleteItem(dayId, item.id);
@@ -1582,37 +1634,11 @@ export default function Planner() {
 
                                             {/* 🔥 BOTTOM ROW: Full-width Booking Hint Strip */}
                                             {item.booking_hint && (
-                                              <div className="mt-4 p-3 rounded-xl bg-sky-50 border border-sky-100/50 flex items-start gap-2.5 shadow-sm group-hover:bg-sky-100/30 transition-colors">
+                                              <div className="mt-3 p-3 rounded-xl bg-sky-50 border border-sky-100/50 flex items-start gap-2 shadow-sm group-hover:bg-sky-100/30 transition-colors min-w-0 w-full">
                                                 <Sparkles size={14} className="text-sky-500 shrink-0 mt-0.5" />
-                                                <p className="text-[10px] text-sky-800 leading-relaxed font-semibold italic">
+                                                <p className="text-[10px] text-sky-800 leading-relaxed font-semibold italic min-w-0 flex-1 break-words">
                                                   {item.booking_hint}
                                                 </p>
-                                              </div>
-                                            )}
-
-                                            {/* ⭐️ RATING UI - Unlocked when trip is completed */}
-                                            {isCompleted && (
-                                              <div className="flex items-center gap-0.5 mt-3 pt-3 border-t border-slate-50" onClick={(e) => e.stopPropagation()}>
-                                                {[1, 2, 3, 4, 5].map((star) => (
-                                                  <button
-                                                    key={star}
-                                                    onClick={() => {
-                                                      setReviewingItem({ ...item, dayId });
-                                                      setReviewForm(prev => ({ ...prev, rating: star }));
-                                                    }}
-                                                    className="p-0.5 transition-transform hover:scale-125"
-                                                  >
-                                                    <Star
-                                                      size={14}
-                                                      fill={(item.rating || 0) >= star ? "#fbbf24" : "transparent"}
-                                                      stroke={(item.rating || 0) >= star ? "#fbbf24" : "#cbd5e1"}
-                                                      strokeWidth={2.5}
-                                                    />
-                                                  </button>
-                                                ))}
-                                                {item.rating > 0 && (
-                                                  <span className="text-[10px] font-black text-amber-500 ml-1">{item.rating}.0</span>
-                                                )}
                                               </div>
                                             )}
                                           </div>
@@ -1666,23 +1692,6 @@ export default function Planner() {
 
             </div>
           </div>
-          <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-28 z-0 bg-gradient-to-t from-white via-white/90 to-transparent rounded-b-[32px]" />
-
-          {displayDayOrder.length > 0 && (
-            <div className="absolute bottom-5 left-0 right-0 flex justify-center z-50">
-              <button
-                onClick={() => setIsCompleted(!isCompleted)}
-                className={`w-1/2 max-w-[260px] py-3 rounded-2xl text-[12px] font-black flex items-center justify-center gap-2 border-2 transition-all duration-300 ${isCompleted
-                  ? 'bg-emerald-500 text-white border-emerald-500'
-                  : 'bg-transparent text-sky-500 border-sky-400/40 opacity-70 hover:opacity-100 hover:text-sky-700 hover:border-sky-600 hover:bg-sky-50'
-                  }`}
-              >
-                <CheckCircle2 size={16} strokeWidth={3} />
-                {isCompleted ? 'TRIP COMPLETED' : 'COMPLETE JOURNEY'}
-              </button>
-            </div>
-          )}
-
         </motion.div>
 
         {/* --- CENTER CARD: DYNAMIC EXPERIENCE VIEW --- */}
@@ -1835,7 +1844,7 @@ export default function Planner() {
                     {isLoaded && !mapAuthFailed ? (
                       <GoogleMap
                         mapContainerStyle={containerStyle}
-                        center={mapMarkers.length > 0 ? { lat: mapMarkers[0].pos[0], lng: mapMarkers[0].pos[1] } : { lat: 48.8566, lng: 2.3522 }}
+                        center={mapMarkers.length > 0 && mapMarkers[0]?.pos ? { lat: Number(mapMarkers[0].pos[0]), lng: Number(mapMarkers[0].pos[1]) } : (destinationCoords || { lat: 19.8135, lng: 85.8312 })}
                         zoom={13}
                         options={mapOptions}
                         onLoad={map => setMap(map)}
@@ -2047,7 +2056,7 @@ export default function Planner() {
             </div>
 
             <div className="flex bg-slate-100 p-1 rounded-xl">
-              {['saved', 'nearby'].map(tab => (
+              {['drafts', 'popular'].map(tab => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
@@ -2056,122 +2065,175 @@ export default function Planner() {
                     : "text-slate-500 hover:text-slate-700 hover:bg-white/50"
                     }`}
                 >
-                  {tab}
+                  {tab === 'drafts' ? 'Drafts & Saved' : 'Popular Spots'}
                 </button>
               ))}
             </div>
           </div>
 
-          {/* Places List */}
+          {/* Places List & Droppable Pocket */}
           <div className="flex-1 overflow-y-auto px-4 pb-6 no-scrollbar">
-            <div className="space-y-4 pt-2">
-              {searchQuery.trim() && (
-                <div className="px-1 mb-2">
-                  <p className="text-[11px] font-bold text-slate-400">
-                    Results for <span className="text-sky-600">“{searchQuery}”</span>
-                  </p>
-                </div>
-              )}
-
-              {/* EMPTY STATE FOR SAVED */}
-              {!searchQuery.trim() && activeTab === "saved" && savedPlaces.length === 0 && (
-                <div className="flex flex-col items-center justify-center mt-6 py-8 px-6 text-center bg-white rounded-3xl border border-slate-100 shadow-sm">
-                  <div className="w-14 h-14 bg-amber-50 rounded-full flex items-center justify-center mb-4 border border-amber-100/50 shadow-sm">
-                    <Star size={24} className="text-amber-500 fill-amber-500/20" />
-                  </div>
-                  <h3 className="text-base font-extrabold text-slate-800 mb-2">Your wishlist is waiting! ✨</h3>
-                  <p className="text-xs text-slate-500 font-medium leading-relaxed mb-5 max-w-[220px]">
-                    You haven't saved any places yet. Discover amazing spots in Explore and add them here to craft your perfect journey!
-                  </p>
-                  <button
-                    onClick={() => navigate("/explore")}
-                    className="text-xs font-bold text-sky-600 hover:text-white transition-all bg-sky-50 hover:bg-sky-500 px-5 py-2.5 rounded-full border border-sky-100 hover:border-sky-500 shadow-sm"
-                  >
-                    Go to Explore
-                  </button>
-                </div>
-              )}
-
-              {(searchQuery.trim()
-                ? [...savedPlaces, ...aiNearbyPlaces].filter(p =>
-                  p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                  p.desc.toLowerCase().includes(searchQuery.toLowerCase())
-                )
-                : (activeTab === "saved" ? savedPlaces : aiNearbyPlaces)
-              ).map((place, idx) => (
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: idx * 0.1 }}
-                  key={place.id}
-                  onClick={() => setSelectedPlace(place)}
-                  className="group bg-white rounded-[24px] p-3 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all border border-slate-100 cursor-pointer"
+            <Droppable droppableId="place-pool">
+              {(provided, snapshot) => (
+                <div
+                  ref={provided.innerRef}
+                  {...provided.droppableProps}
+                  className={`space-y-4 pt-2 min-h-[180px] rounded-3xl transition-all ${snapshot.isDraggingOver ? "bg-amber-50/60 p-2 border-2 border-dashed border-amber-400" : ""
+                    }`}
                 >
-                  {/* Image */}
-                  <div className="relative h-32 w-full rounded-2xl overflow-hidden mb-3 group-hover:shadow-md transition-shadow">
-                    <img src={place.img} alt={place.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
-                    <div className="absolute top-2 right-2 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-lg text-[10px] font-bold shadow-sm flex items-center gap-1">
-                      <Star size={10} className="text-amber-500 fill-amber-500" /> {place.rating}
+                  {searchQuery.trim() && (
+                    <div className="px-1 mb-2">
+                      <p className="text-[11px] font-bold text-slate-400">
+                        Results for <span className="text-sky-600">“{searchQuery}”</span>
+                      </p>
                     </div>
-                    <div className="absolute bottom-2 left-2 bg-black/60 backdrop-blur-sm px-2 py-1 rounded-md text-white text-[10px] font-bold">
-                      {place.category}
-                    </div>
-                  </div>
+                  )}
 
-                  <div className="px-1">
-                    <div className="flex justify-between items-start mb-1">
-                      <div className="flex flex-col">
-                        <h4 className="font-bold text-slate-800 text-sm group-hover:text-sky-600 transition-colors">{place.name}</h4>
-                        {place.aiMatchScore && (
-                          <div className="flex items-center gap-1 mt-0.5">
-                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse" />
-                            <span className="text-[9px] font-black italic text-emerald-600 tracking-tighter uppercase">{place.aiMatchScore}% Match</span>
+                  {/* EMPTY STATE FOR SAVED & DRAFTS */}
+                  {!searchQuery.trim() && (activeTab === "drafts" || activeTab === "saved") && savedPlaces.length === 0 && (
+                    <div className="flex flex-col items-center justify-center mt-6 py-8 px-6 text-center bg-white rounded-3xl border border-slate-100 shadow-sm">
+                      <h3 className="text-base font-extrabold text-slate-800 mb-2">Your drafts pocket is empty!</h3>
+                      <p className="text-xs text-slate-500 font-medium leading-relaxed mb-5 max-w-[230px]">
+                        Drag activities here from your timeline on the left to unschedule them, or discover new places to stage them before adding to a day!
+                      </p>
+                    </div>
+                  )}
+
+                  {/* LOADING STATE FOR POPULAR SPOTS */}
+                  {(activeTab === "popular" || activeTab === "nearby") && isLoadingPopular && (
+                    <div className="flex flex-col items-center justify-center py-10 px-6 text-center bg-white/50 backdrop-blur-sm rounded-3xl border border-slate-100/80 my-2">
+                      <div className="w-8 h-8 rounded-full border-2 border-sky-500 border-t-transparent animate-spin mb-3" />
+                      <p className="text-xs font-bold text-slate-700">Curating top attractions & dining...</p>
+                      <p className="text-[10px] text-slate-400 font-medium mt-1">Combining Google Places prominence with Unsplash imagery 🎨</p>
+                    </div>
+                  )}
+
+                  {/* EMPTY STATE FOR POPULAR SPOTS */}
+                  {!isLoadingPopular && (activeTab === "popular" || activeTab === "nearby") && (aiNearbyPlaces || []).length === 0 && (livePopularPlaces || []).length === 0 && !searchQuery.trim() && (
+                    <div className="flex flex-col items-center justify-center mt-4 py-8 px-6 text-center bg-white rounded-3xl border border-slate-100 shadow-sm">
+                      <h3 className="text-sm font-extrabold text-slate-700 mb-1">No spots found nearby</h3>
+                      <p className="text-xs text-slate-400">Try zooming out on the map to expand your exploration radius.</p>
+                    </div>
+                  )}
+
+                  {(isLoadingPopular ? [] : (searchQuery.trim()
+                    ? [...(savedPlaces || []), ...(aiNearbyPlaces || []), ...(livePopularPlaces || [])].filter(p =>
+                      (p?.name || p?.title || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+                      (p?.desc || "").toLowerCase().includes(searchQuery.toLowerCase())
+                    )
+                    : ((activeTab === "drafts" || activeTab === "saved") ? (savedPlaces || []) : [...(aiNearbyPlaces || []), ...(livePopularPlaces || [])])
+                  )).map((place, idx) => (
+                    <Draggable
+                      key={place.id || `place-${idx}`}
+                      draggableId={String(place.id || `place-${idx}`)}
+                      index={idx}
+                      isDragDisabled={activeTab !== "drafts" && activeTab !== "saved"}
+                    >
+                      {(dragProvided, dragSnapshot) => (
+                        <div
+                          ref={dragProvided.innerRef}
+                          {...dragProvided.draggableProps}
+                          {...dragProvided.dragHandleProps}
+                          onClick={() => setSelectedPlace(place)}
+                          className={`group bg-white rounded-[24px] p-3 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all border border-slate-100 cursor-pointer ${dragSnapshot.isDragging ? "opacity-95 scale-[1.03] z-50 shadow-2xl border-sky-400" : ""
+                            }`}
+                        >
+                          {/* Image or Activity Banner */}
+                          {place.img ? (
+                            <div className="relative h-32 w-full rounded-2xl overflow-hidden mb-3 group-hover:shadow-md transition-shadow">
+                              <img src={place.img} alt={place.name || place.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
+                              {place.rating && (
+                                <div className="absolute top-2 right-2 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-lg text-[10px] font-bold shadow-sm flex items-center gap-1">
+                                  <Star size={10} className="text-amber-500 fill-amber-500" /> {place.rating}
+                                </div>
+                              )}
+                              {place.category && (
+                                <div className="absolute bottom-2 left-2 bg-black/60 backdrop-blur-sm px-2 py-1 rounded-md text-white text-[10px] font-bold">
+                                  {place.category}
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="h-16 w-full rounded-2xl bg-gradient-to-r from-sky-50 to-indigo-50 border border-sky-100/60 mb-3 flex items-center justify-between px-4">
+                              <div className="flex items-center gap-2">
+                                <MapPin className="text-sky-600 w-5 h-5" />
+                                <span className="text-xs font-extrabold text-sky-900 uppercase tracking-wider">{place.type || 'Activity'}</span>
+                              </div>
+                              <span className="text-[10px] font-bold bg-white/80 px-2 py-1 rounded-md text-slate-600 shadow-2xs">Staged Draft</span>
+                            </div>
+                          )}
+
+                          <div className="px-1">
+                            <div className="flex justify-between items-start mb-1">
+                              <div className="flex flex-col">
+                                <h4 className="font-bold text-slate-800 text-sm group-hover:text-sky-600 transition-colors">{place.name || place.title || 'Activity'}</h4>
+                                {place.aiMatchScore && (
+                                  <div className="flex items-center gap-1 mt-0.5">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse" />
+                                    <span className="text-[9px] font-black italic text-emerald-600 tracking-tighter uppercase">{place.aiMatchScore}% Match</span>
+                                  </div>
+                                )}
+                              </div>
+                              {/* Add Action */}
+                              <div className="relative flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                                {(activeTab === "popular" || activeTab === "nearby") && !placePool.some(p => p.id === place.id || p.name === (place.name || place.title)) && (
+                                  <button
+                                    onClick={() => {
+                                      pushToHistory();
+                                      setPlacePool(prev => [{ ...place, id: place.id || `draft-${Date.now()}` }, ...prev]);
+                                    }}
+                                    title="Save to Drafts & Saved Pocket"
+                                    className="w-8 h-8 rounded-full flex items-center justify-center transition-all shadow-sm bg-amber-50 text-amber-600 hover:bg-amber-500 hover:text-white border border-amber-100/60"
+                                  >
+                                    <Bookmark size={14} strokeWidth={2.5} />
+                                  </button>
+                                )}
+                                {Object.values(days).some(d => d.items?.some(it => (it.placeId === place.id || it.id === place.id))) ? (
+                                  <div className="flex items-center gap-2">
+                                    {addFeedback?.id === place.id && (
+                                      <span className="text-[10px] font-bold text-emerald-600 animate-pulse">
+                                        {addFeedback.dayName} ✓
+                                      </span>
+                                    )}
+                                    <button
+                                      disabled
+                                      className="w-8 h-8 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center cursor-default shadow-sm border border-emerald-100"
+                                    >
+                                      <Check size={16} />
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <>
+                                    <button
+                                      onClick={() => setAddingPlace({ place, dayId: displayDayOrder[0], time: "10:00 AM" })}
+                                      className="w-8 h-8 rounded-full flex items-center justify-center transition-all shadow-sm group/btn bg-sky-50 text-sky-600 hover:bg-sky-600 hover:text-white"
+                                    >
+                                      <Plus size={16} />
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+
+                            <p className="text-xs text-slate-500 font-medium line-clamp-2 leading-relaxed">{place.desc || place.description || "No details available."}</p>
+
+                            <div className="flex justify-end mt-2">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setSelectedPlace(place); }}
+                                className="text-[10px] font-bold text-sky-600 hover:text-sky-700 hover:underline transition-all"
+                              >
+                                View Details
+                              </button>
+                            </div>
                           </div>
-                        )}
-                      </div>
-                      {/* Add Action */}
-                      <div className="relative" onClick={(e) => e.stopPropagation()}>
-                        {Object.values(days).some(d => d.items?.some(it => it.placeId === place.id)) ? (
-                          <div className="flex items-center gap-2">
-                            {addFeedback?.id === place.id && (
-                              <span className="text-[10px] font-bold text-emerald-600 animate-pulse">
-                                {addFeedback.dayName} ✓
-                              </span>
-                            )}
-                            <button
-                              disabled
-                              className="w-8 h-8 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center cursor-default shadow-sm border border-emerald-100"
-                            >
-                              <Check size={16} />
-                            </button>
-                          </div>
-                        ) : (
-                          <>
-                            <button
-                              onClick={() => setAddingPlace({ place, dayId: displayDayOrder[0], time: "10:00 AM" })}
-                              className="w-8 h-8 rounded-full flex items-center justify-center transition-all shadow-sm group/btn bg-sky-50 text-sky-600 hover:bg-sky-600 hover:text-white"
-                            >
-                              <Plus size={16} />
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-
-                    <p className="text-xs text-slate-500 font-medium line-clamp-2 leading-relaxed">{place.desc}</p>
-
-                    <div className="flex justify-end mt-2">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); navigate("/explore"); }}
-                        className="text-[10px] font-bold text-sky-600 hover:text-sky-700 hover:underline transition-all"
-                      >
-                        View Details
-                      </button>
-                    </div>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
+                        </div>
+                      )}
+                    </Draggable>
+                  ))}
+                  {provided.placeholder}
+                </div>
+              )}
+            </Droppable>
           </div>
         </motion.div>
 
@@ -2262,112 +2324,6 @@ export default function Planner() {
               </div>
             </motion.div>
           </div>
-        )}
-      </AnimatePresence>
-
-      {/* --- REVIEW MODAL --- */}
-      <AnimatePresence>
-        {reviewingItem && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setReviewingItem(null)}
-              className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100]"
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white rounded-[32px] shadow-2xl z-[101] overflow-hidden border border-slate-100 p-8"
-            >
-              <div className="mb-6">
-                <div className="text-sky-500 text-[10px] font-black uppercase tracking-widest mb-2">Detailed Feedback</div>
-                <h2 className="text-2xl font-bold text-slate-800">{reviewingItem.title}</h2>
-                <p className="text-slate-500 text-sm mt-1">Tell us about your experience to help personalize your future trips.</p>
-              </div>
-
-              <div className="space-y-6">
-                {/* Overall Rating */}
-                <div>
-                  <div className="flex justify-between items-center mb-2">
-                    <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wide">Overall Rating *</label>
-                  </div>
-                  <div className="flex gap-2">
-                    {[1, 2, 3, 4, 5].map(star => (
-                      <button key={`r-${star}`} onClick={() => setReviewForm(p => ({ ...p, rating: star }))}>
-                        <Star size={24} fill={reviewForm.rating >= star ? "#fbbf24" : "transparent"} stroke={reviewForm.rating >= star ? "#fbbf24" : "#cbd5e1"} />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Facility Quality */}
-                <div>
-                  <div className="flex justify-between items-center mb-2">
-                    <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wide">Facility Quality *</label>
-                  </div>
-                  <div className="flex gap-2">
-                    {[1, 2, 3, 4, 5].map(star => (
-                      <button key={`f-${star}`} onClick={() => setReviewForm(p => ({ ...p, facility_quality: star }))}>
-                        <Star size={24} fill={reviewForm.facility_quality >= star ? "#60a5fa" : "transparent"} stroke={reviewForm.facility_quality >= star ? "#60a5fa" : "#cbd5e1"} />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Budget Friendly */}
-                <div>
-                  <div className="flex justify-between items-center mb-2">
-                    <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wide">Budget Friendly *</label>
-                  </div>
-                  <div className="flex gap-2">
-                    {[1, 2, 3, 4, 5].map(star => (
-                      <button key={`b-${star}`} onClick={() => setReviewForm(p => ({ ...p, budget_friendly: star }))}>
-                        <Star size={24} fill={reviewForm.budget_friendly >= star ? "#34d399" : "transparent"} stroke={reviewForm.budget_friendly >= star ? "#34d399" : "#cbd5e1"} />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Personal Experience */}
-                <div>
-                  <div className="flex justify-between items-center mb-2">
-                    <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wide">Personal Experience *</label>
-                  </div>
-                  <div className="flex gap-2">
-                    {[1, 2, 3, 4, 5].map(star => (
-                      <button key={`p-${star}`} onClick={() => setReviewForm(p => ({ ...p, personal_experience: star }))}>
-                        <Star size={24} fill={reviewForm.personal_experience >= star ? "#c084fc" : "transparent"} stroke={reviewForm.personal_experience >= star ? "#c084fc" : "#cbd5e1"} />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Review Text */}
-                <div>
-                  <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-2 block">Notes (Optional)</label>
-                  <textarea
-                    value={reviewForm.review_text}
-                    onChange={(e) => setReviewForm(p => ({ ...p, review_text: e.target.value }))}
-                    placeholder="Any specific thoughts?"
-                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:border-sky-300 focus:bg-white transition-all resize-none text-sm"
-                    rows={3}
-                  />
-                </div>
-
-                {/* Submit Button */}
-                <button
-                  onClick={submitPlaceReview}
-                  disabled={isSubmittingReview}
-                  className="w-full py-4 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-2xl transition-colors disabled:opacity-50"
-                >
-                  {isSubmittingReview ? "Submitting..." : "Submit Feedback"}
-                </button>
-              </div>
-            </motion.div>
-          </>
         )}
       </AnimatePresence>
 
