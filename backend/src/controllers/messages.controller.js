@@ -120,10 +120,37 @@ const sendMessage = async (req, res, next) => {
           ? verifiedDayEntries.map(e => e[1])
           : Object.fromEntries(verifiedDayEntries);
 
+        // 5. Programmatic Safeguard: Filter out generic meal placeholders (Option B) & deduplicate sights across days
+        const seenLocations = new Set();
+        const genericRegex = /^(local\s*(restaurant|café|cafe|market|eatery)|beachside\s*(restaurant|cafe)|hotel\s*([a-z]+)?$|cozy\s*hotel|breakfast\s*at|lunch\s*at|dinner\s*at)/i;
+
+        const cleanDaysList = (isArray ? Object.values(finalDays) : Object.entries(finalDays)).map(entry => {
+          const key = isArray ? null : entry[0];
+          const dayObj = isArray ? entry : entry[1];
+          const rawList = dayObj.items || dayObj.activities || [];
+
+          const cleanedItems = rawList.filter(item => {
+            const name = (item.name || item.title || "").trim();
+            // Allow transport hubs for arrival/departure, but check attractions and meals
+            if (item.type !== "TRANSPORT" && item.type !== "FLIGHT") {
+              if (genericRegex.test(name)) return false;
+              // Deduplication check using normalized canonical signature
+              const simplified = name.toLowerCase().replace(/^(the|shree|a|an)\s+/i, '').replace(/\s+(beach|caves|temple|monument|resort|hotel|park|gardens)$/i, '').trim();
+              if (seenLocations.has(simplified) && simplified.length > 3) return false;
+              if (simplified.length > 3) seenLocations.add(simplified);
+            }
+            return true;
+          });
+
+          return isArray ? { ...dayObj, items: cleanedItems, activities: cleanedItems } : [key, { ...dayObj, items: cleanedItems, activities: cleanedItems }];
+        });
+
+        const ultraCleanDays = isArray ? cleanDaysList : Object.fromEntries(cleanDaysList);
+
         const verifiedItinerary = {
           ...itineraryJson,
           destination: destination,
-          days: finalDays
+          days: ultraCleanDays
         };
 
         // Replace the unverified itinerary with our Google-grounded version

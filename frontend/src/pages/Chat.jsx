@@ -71,6 +71,443 @@ function DateTimeSplitInput({ value, onChange }) {
   );
 }
 
+// ─── Station / Airport Google Search Input ──────────────────────────────────
+function StationSearchInput({ value, onChange, placeholder, destination, label }) {
+  const [suggestions, setSuggestions] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [showList, setShowList] = useState(false);
+  const [error, setError] = useState(null);
+
+  const fetchStations = async (customQuery) => {
+    if (!window.google || (!destination && !customQuery)) {
+      setError("Please ensure destination is set in Step 2.");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    setShowList(true);
+
+    try {
+      if (!window.google.maps.places) throw new Error("Places API missing");
+      let PlaceClass = window.google.maps.places.Place;
+      if (!PlaceClass && window.google.maps.importLibrary) {
+        const lib = await window.google.maps.importLibrary("places");
+        PlaceClass = lib.Place;
+      }
+      if (!PlaceClass) throw new Error("Places API unavailable");
+
+      const query = customQuery
+        ? `${customQuery} in or near ${destination}`
+        : `top railway station airport transport in ${destination}`;
+
+      const { places } = await PlaceClass.searchByText({
+        textQuery: query,
+        fields: ['displayName', 'formattedAddress', 'id']
+      });
+
+      if (places && places.length > 0) {
+        setSuggestions(places.slice(0, 8).map(p => ({ name: p.displayName, id: p.id })));
+      } else {
+        setError(customQuery ? `No stations found matching "${customQuery}".` : "No stations or airports found.");
+        setSuggestions([]);
+      }
+    } catch (err) {
+      console.error("Station search err:", err);
+      setError("Could not reach Google Maps.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex justify-between items-center mb-1">
+        <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">{label}</label>
+        <button
+          type="button"
+          onClick={() => fetchStations("")}
+          className="text-[10px] text-sky-600 font-bold bg-sky-100 px-2.5 py-0.5 rounded-md hover:bg-sky-200 transition"
+        >
+          {loading ? "Loading..." : "Fetch Top"}
+        </button>
+      </div>
+      <div className="flex gap-1.5">
+        <input
+          value={value || ""}
+          onChange={(e) => {
+            onChange(e.target.value);
+            if (error) setError(null);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              if (value && value.trim()) fetchStations(value);
+            }
+          }}
+          placeholder={placeholder}
+          className="flex-1 px-3.5 py-2 bg-slate-100/50 border-2 focus:bg-white focus:border-sky-600 rounded-xl outline-none text-sm transition font-medium placeholder:font-normal"
+        />
+        <button
+          type="button"
+          onClick={() => {
+            if (value && value.trim()) {
+              fetchStations(value);
+            } else {
+              fetchStations("");
+            }
+          }}
+          className="px-3.5 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-1 shadow-sm"
+        >
+          Search
+        </button>
+      </div>
+      {error && <p className="text-[11px] text-red-500 mt-1">{error}</p>}
+      {showList && suggestions.length > 0 && (
+        <div className="flex flex-col gap-1 mt-1.5 max-h-24 overflow-y-auto pr-1 border border-slate-200 bg-white rounded-lg p-1.5 shadow-inner">
+          {suggestions.map((item) => {
+            const isSelected = value === item.name;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => {
+                  onChange(item.name);
+                  setShowList(false);
+                }}
+                className={`w-full text-left text-[12px] px-2.5 py-1.5 rounded-md transition-all flex items-center justify-between ${isSelected ? 'bg-sky-50 text-sky-700 font-semibold border border-sky-200' : 'text-slate-700 hover:bg-slate-50 border border-transparent'}`}
+              >
+                <span className="truncate pr-2">{item.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Haversine Distance Helper ──────────────────────────────────────────────
+function getHaversineDistanceKm(lat1, lon1, lat2, lon2) {
+  const R = 6371; // Earth's radius in kilometers
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * (Math.PI / 180)) *
+    Math.cos(lat2 * (Math.PI / 180)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return (R * c).toFixed(1);
+}
+
+// ─── Hotel Search (When Already Booked) ──────────────────────────────────────
+function HotelBookedSearch({ value, onChange, placeholder, destination }) {
+  const [suggestions, setSuggestions] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [showList, setShowList] = useState(false);
+  const [error, setError] = useState(null);
+
+  const fetchHotels = async (customQuery) => {
+    if (!window.google || (!destination && !customQuery)) {
+      setError("Please ensure destination is set in Step 2.");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    setShowList(true);
+
+    try {
+      if (!window.google.maps.places) throw new Error("Places API missing");
+      let PlaceClass = window.google.maps.places.Place;
+      if (!PlaceClass && window.google.maps.importLibrary) {
+        const lib = await window.google.maps.importLibrary("places");
+        PlaceClass = lib.Place;
+      }
+      if (!PlaceClass) throw new Error("Places API unavailable");
+
+      const query = customQuery
+        ? `${customQuery} hotel resort in or near ${destination}`
+        : `top hotel resort stay in ${destination}`;
+
+      const { places } = await PlaceClass.searchByText({
+        textQuery: query,
+        fields: ['displayName', 'formattedAddress', 'id', 'rating']
+      });
+
+      if (places && places.length > 0) {
+        setSuggestions(places.slice(0, 8).map(p => ({
+          name: p.displayName,
+          address: p.formattedAddress,
+          rating: p.rating,
+          id: p.id
+        })));
+      } else {
+        setError(customQuery ? `No hotels found matching "${customQuery}".` : "No hotels found.");
+        setSuggestions([]);
+      }
+    } catch (err) {
+      console.error("Hotel search err:", err);
+      setError("Could not reach Google Maps.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex justify-between items-center mb-1">
+        <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Exact Hotel Name / Address</label>
+        <button
+          type="button"
+          onClick={() => fetchHotels("")}
+          className="text-[10px] text-sky-600 font-bold bg-sky-100 px-2.5 py-0.5 rounded-md hover:bg-sky-200 transition"
+        >
+          {loading ? "Loading..." : "Fetch Top Stays"}
+        </button>
+      </div>
+      <div className="flex gap-1.5">
+        <input
+          value={value || ""}
+          onChange={(e) => {
+            onChange(e.target.value);
+            if (error) setError(null);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              if (value && value.trim()) fetchHotels(value);
+            }
+          }}
+          placeholder={placeholder || "e.g. Mayfair Heritage, Puri"}
+          className="flex-1 px-3.5 py-2 bg-slate-100/50 border-2 focus:bg-white focus:border-sky-600 rounded-xl outline-none text-sm transition font-medium placeholder:font-normal"
+        />
+        <button
+          type="button"
+          onClick={() => {
+            if (value && value.trim()) {
+              fetchHotels(value);
+            } else {
+              fetchHotels("");
+            }
+          }}
+          className="px-3.5 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-1 shadow-sm"
+        >
+          Search
+        </button>
+      </div>
+      {error && <p className="text-[11px] text-red-500 mt-1">{error}</p>}
+      {showList && suggestions.length > 0 && (
+        <div className="flex flex-col gap-1 mt-1.5 max-h-16 overflow-y-auto pr-1 border border-slate-200 bg-white rounded-lg p-1.5 shadow-inner">
+          {suggestions.map((item) => {
+            const isSelected = value === item.name;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => {
+                  onChange(item.name);
+                  setShowList(false);
+                }}
+                className={`w-full text-left text-[12px] px-2.5 py-1.5 rounded-md transition-all flex items-center justify-between ${isSelected ? 'bg-sky-50 text-sky-700 font-semibold border border-sky-200' : 'text-slate-700 hover:bg-slate-50 border border-transparent'}`}
+              >
+                <span className="truncate pr-2">{item.name} {item.rating ? `(⭐ ${item.rating})` : ""}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Smart Hotel Recommendation Engine (When Not Booked Yet) ────────────────
+function HotelRecommendationEngine({ value, onChange, destination, mustVisitPlaces, arrivalStation }) {
+  const [suggestions, setSuggestions] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [showList, setShowList] = useState(false);
+  const [error, setError] = useState(null);
+  const [transportMode, setTransportMode] = useState("train");
+  const [anchorLabel, setAnchorLabel] = useState("");
+
+  const handleRecommend = async (customQuery) => {
+    if (!window.google || (!destination && !customQuery)) {
+      setError("Please ensure destination is set in Step 2.");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    setShowList(true);
+
+    try {
+      if (!window.google.maps.places) throw new Error("Places API missing");
+      let PlaceClass = window.google.maps.places.Place;
+      if (!PlaceClass && window.google.maps.importLibrary) {
+        const lib = await window.google.maps.importLibrary("places");
+        PlaceClass = lib.Place;
+      }
+      if (!PlaceClass) throw new Error("Places API unavailable");
+
+      // 1. Determine logical geographic anchor point
+      let anchorText = destination;
+      let anchorName = destination;
+      if (mustVisitPlaces && mustVisitPlaces.length > 0) {
+        anchorText = `${mustVisitPlaces[0]} in ${destination}`;
+        anchorName = mustVisitPlaces[0];
+      } else if (arrivalStation && arrivalStation.trim()) {
+        anchorText = `${arrivalStation} in ${destination}`;
+        anchorName = arrivalStation;
+      } else {
+        anchorText = `${transportMode === 'flight' ? 'airport' : 'railway station'} in ${destination}`;
+        anchorName = `${transportMode === 'flight' ? 'Airport' : 'Railway Station'}`;
+      }
+      setAnchorLabel(anchorName);
+
+      // 2. Locate anchor coordinates for Haversine calculations
+      let anchorLat = null;
+      let anchorLng = null;
+      try {
+        const { places: anchorRes } = await PlaceClass.searchByText({
+          textQuery: anchorText,
+          fields: ['location', 'displayName']
+        });
+        if (anchorRes && anchorRes.length > 0 && anchorRes[0].location) {
+          anchorLat = typeof anchorRes[0].location.lat === 'function' ? anchorRes[0].location.lat() : anchorRes[0].location.lat;
+          anchorLng = typeof anchorRes[0].location.lng === 'function' ? anchorRes[0].location.lng() : anchorRes[0].location.lng;
+          if (anchorRes[0].displayName) anchorName = anchorRes[0].displayName;
+          setAnchorLabel(anchorName);
+        }
+      } catch (e) {
+        console.warn("Could not fetch exact anchor coordinates, defaulting to city bounds:", e);
+      }
+
+      // 3. Search for stays near anchor or matching query
+      const query = customQuery
+        ? `${customQuery} stay hotel in ${destination}`
+        : `top rated hotels resorts near ${anchorName} in ${destination}`;
+
+      const { places } = await PlaceClass.searchByText({
+        textQuery: query,
+        fields: ['displayName', 'formattedAddress', 'id', 'location', 'rating']
+      });
+
+      if (places && places.length > 0) {
+        const mapped = places.slice(0, 8).map(p => {
+          let dist = null;
+          if (anchorLat !== null && anchorLng !== null && p.location) {
+            const hLat = typeof p.location.lat === 'function' ? p.location.lat() : p.location.lat;
+            const hLng = typeof p.location.lng === 'function' ? p.location.lng() : p.location.lng;
+            dist = getHaversineDistanceKm(anchorLat, anchorLng, hLat, hLng);
+          }
+          return {
+            name: p.displayName,
+            rating: p.rating,
+            distance: dist,
+            id: p.id
+          };
+        });
+        // Sort mathematically by closest distance!
+        mapped.sort((a, b) => {
+          if (a.distance && b.distance) return parseFloat(a.distance) - parseFloat(b.distance);
+          return 0;
+        });
+        setSuggestions(mapped);
+      } else {
+        setError(customQuery ? `No stays found for "${customQuery}".` : "No hotels found near anchor point.");
+        setSuggestions([]);
+      }
+    } catch (err) {
+      console.error("Smart recommendation err:", err);
+      setError("Could not compute spatial recommendations via Google Maps.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      {!arrivalStation && (!mustVisitPlaces || mustVisitPlaces.length === 0) && (
+        <div className="flex items-center justify-between p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+          <span className="text-slate-600 font-medium">Primary arrival mode?</span>
+          <div className="flex gap-1">
+            <button type="button" onClick={() => setTransportMode("train")} className={`px-2 py-0.5 rounded-md border font-bold transition text-[11px] ${transportMode === "train" ? "bg-sky-600 text-white border-sky-600" : "bg-white text-slate-600 border-slate-200"}`}>🚆 Train</button>
+            <button type="button" onClick={() => setTransportMode("flight")} className={`px-2 py-0.5 rounded-md border font-bold transition text-[11px] ${transportMode === "flight" ? "bg-sky-600 text-white border-sky-600" : "bg-white text-slate-600 border-slate-200"}`}>✈️ Flight</button>
+          </div>
+        </div>
+      )}
+
+      <div className="flex justify-between items-center mb-1">
+        <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Preferred Area / Stay (Optional)</label>
+        <button
+          type="button"
+          onClick={() => handleRecommend("")}
+          className="text-[10px] text-emerald-700 bg-emerald-100 font-bold px-2.5 py-0.5 rounded-md hover:bg-emerald-200 transition shadow-sm"
+        >
+          {loading ? "Computing..." : "✨ Smart Recommend"}
+        </button>
+      </div>
+      <div className="flex gap-1.5">
+        <input
+          value={value || ""}
+          onChange={(e) => {
+            onChange(e.target.value);
+            if (error) setError(null);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              if (value && value.trim()) handleRecommend(value);
+            }
+          }}
+          placeholder="e.g. Near Sea Beach or Hotel Name"
+          className="flex-1 px-3.5 py-2 bg-slate-100/50 border-2 focus:bg-white focus:border-sky-600 rounded-xl outline-none text-sm transition font-medium placeholder:font-normal"
+        />
+        <button
+          type="button"
+          onClick={() => {
+            if (value && value.trim()) {
+              handleRecommend(value);
+            } else {
+              handleRecommend("");
+            }
+          }}
+          className="px-3.5 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-1 shadow-sm"
+        >
+          Search
+        </button>
+      </div>
+      {error && <p className="text-[11px] text-red-500 mt-1">{error}</p>}
+      {showList && suggestions.length > 0 && (
+        <div className="flex flex-col gap-1 mt-1.5 max-h-28 overflow-y-auto pr-1 border border-slate-200 bg-white rounded-lg p-1.5 shadow-inner">
+          {suggestions.map((item) => {
+            const isSelected = value === item.name;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => {
+                  onChange(item.name);
+                  setShowList(false);
+                }}
+                className={`w-full text-left text-[12px] px-2.5 py-1.5 rounded-md transition-all flex flex-col justify-center ${isSelected ? 'bg-sky-50 text-sky-800 font-semibold border border-sky-200' : 'text-slate-700 hover:bg-slate-50 border border-transparent'}`}
+              >
+                <div className="flex justify-between w-full">
+                  <span className="truncate pr-2 font-medium">{item.name}</span>
+                  {item.rating && <span className="text-[11px] text-amber-600 font-bold flex-shrink-0">⭐ {item.rating}</span>}
+                </div>
+                {item.distance && (
+                  <span className="text-[10px] text-slate-500 font-normal mt-0.5">
+                    📍 {item.distance} km from {anchorLabel || "center"}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Chat() {
   const navigate = useNavigate();
   const { user, loginWithGoogle, loading: authLoading } = useUser();
@@ -163,15 +600,35 @@ export default function Chat() {
     vibe: "Balanced",
   });
 
+  // Auto-default departure date based on arrival date + number of trip days
+  useEffect(() => {
+    if (onboardingStep === 5 && !onboardingData.departureTime && onboardingData.arrivalTime && onboardingData.days) {
+      const [arrDate, arrTime] = onboardingData.arrivalTime.split("T");
+      if (arrDate) {
+        const [year, month, day] = arrDate.split("-").map(Number);
+        if (year && month && day) {
+          const d = new Date(year, month - 1, day + (parseInt(onboardingData.days, 10) || 1));
+          const yyyy = d.getFullYear();
+          const mm = String(d.getMonth() + 1).padStart(2, "0");
+          const dd = String(d.getDate()).padStart(2, "0");
+          const defTime = arrTime || "10:00";
+          setOnboardingData(prev => ({ ...prev, departureTime: `${yyyy}-${mm}-${dd}T${defTime}` }));
+        }
+      }
+    }
+  }, [onboardingStep, onboardingData.arrivalTime, onboardingData.days, onboardingData.departureTime]);
+
   const messagesEndRef = useRef(null);
 
   // ── Must-Visit Places Feature ───────────────────────────────────────────
   const [topAttractions, setTopAttractions] = useState([]);
   const [isFetchingPlaces, setIsFetchingPlaces] = useState(false);
   const [placesError, setPlacesError] = useState(null);
+  const [placeSearchQuery, setPlaceSearchQuery] = useState("");
+  const [activeCategory, setActiveCategory] = useState("sights");
 
-  const fetchTopAttractions = async (dest) => {
-    if (!window.google || !isLoaded || !dest) {
+  const searchPlacesInDestination = async (customQuery, dest, categoryOverride = null) => {
+    if (!window.google || !isLoaded || (!dest && !customQuery)) {
       setPlacesError("Google Maps API not loaded yet.");
       return;
     }
@@ -193,22 +650,31 @@ export default function Chat() {
         throw new Error("New Google Maps Place API is not available.");
       }
 
+      let textQuery = `top tourist attractions monuments in ${dest}`;
+      const targetCat = categoryOverride || activeCategory;
+      if (customQuery && customQuery.trim()) {
+        textQuery = `${customQuery} in ${dest}`;
+      } else if (targetCat === "dining") {
+        textQuery = `top iconic restaurants famous street food cafes in ${dest}`;
+      } else if (targetCat === "markets") {
+        textQuery = `top famous local shopping markets craft bazars in ${dest}`;
+      }
+
       const request = {
-        textQuery: `top tourist attractions in ${dest}`,
+        textQuery: textQuery,
         fields: ['displayName', 'id'],
       };
 
       const { places } = await PlaceClass.searchByText(request);
 
       if (places && places.length > 0) {
-        // Map to match the previous structure
         const formattedPlaces = places.slice(0, 10).map(p => ({
           name: p.displayName,
           place_id: p.id
         }));
         setTopAttractions(formattedPlaces);
       } else {
-        setPlacesError(`No places found.`);
+        setPlacesError(`No places found for ${targetCat} matching query.`);
       }
     } catch (err) {
       console.error("Places API Error:", err);
@@ -216,6 +682,18 @@ export default function Chat() {
     } finally {
       setIsFetchingPlaces(false);
     }
+  };
+
+  const fetchTopAttractions = (dest) => {
+    setPlaceSearchQuery("");
+    setActiveCategory("sights");
+    searchPlacesInDestination("", dest, "sights");
+  };
+
+  const searchPlacesByCategory = (cat, dest) => {
+    setPlaceSearchQuery("");
+    setActiveCategory(cat);
+    searchPlacesInDestination("", dest, cat);
   };
 
   // ── Reset UI state when trip changes ──────────────────────────────────────
@@ -1056,41 +1534,100 @@ export default function Chat() {
                           <div className="mt-2 p-3 bg-slate-50 border border-slate-100 rounded-xl">
                             <div className="flex justify-between items-center mb-2">
                               <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Must-Visit Places (Optional)</label>
-                              <button onClick={() => fetchTopAttractions(onboardingData.destination)} className="text-[10px] text-sky-600 font-bold bg-sky-100 px-2 py-1 rounded-md hover:bg-sky-200 transition">Fetch Top Places</button>
+                              <button type="button" onClick={() => fetchTopAttractions(onboardingData.destination)} className="text-[10px] text-sky-600 font-bold bg-sky-100 px-2.5 py-1 rounded-md hover:bg-sky-200 transition">Fetch Top</button>
                             </div>
 
-                            {isFetchingPlaces && <p className="text-xs text-slate-500 italic">Finding top spots...</p>}
-                            {placesError && <p className="text-xs text-red-500">{placesError}</p>}
+                            <div className="flex gap-1 mb-2 overflow-x-auto pb-0.5">
+                              <button
+                                type="button"
+                                onClick={() => searchPlacesByCategory('sights', onboardingData.destination)}
+                                className={`px-2 py-1 rounded-lg font-bold text-[10px] transition whitespace-nowrap border ${activeCategory === 'sights' && topAttractions.length > 0 ? 'bg-sky-600 text-white border-sky-600 shadow-xs' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+                              >
+                                Sights
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => searchPlacesByCategory('dining', onboardingData.destination)}
+                                className={`px-2 py-1 rounded-lg font-bold text-[10px] transition whitespace-nowrap border ${activeCategory === 'dining' ? 'bg-sky-600 text-white border-sky-500 shadow-xs' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+                              >
+                                Iconic Dining
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => searchPlacesByCategory('markets', onboardingData.destination)}
+                                className={`px-2 py-1 rounded-lg font-bold text-[10px] transition whitespace-nowrap border ${activeCategory === 'markets' ? 'bg-sky-600 text-white border-sky-600 shadow-xs' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+                              >
+                                Famous Markets
+                              </button>
+                            </div>
 
-                            {!isFetchingPlaces && topAttractions.length > 0 && (
-                              <div className="flex flex-wrap gap-2 mt-2 max-h-32 overflow-y-auto no-scrollbar pb-1">
-                                {topAttractions.map((place) => {
-                                  const mustVisit = onboardingData.mustVisitPlaces || [];
-                                  const isSelected = mustVisit.includes(place.name);
-                                  return (
-                                    <button
-                                      key={place.place_id}
-                                      onClick={() => {
-                                        const newPlaces = isSelected
-                                          ? mustVisit.filter(p => p !== place.name)
-                                          : [...mustVisit, place.name];
-                                        setOnboardingData({ ...onboardingData, mustVisitPlaces: newPlaces });
-                                      }}
-                                      className={`text-xs px-3 py-1.5 rounded-full border transition-all ${isSelected ? 'bg-sky-600 border-sky-600 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-600 hover:border-sky-300'}`}
-                                    >
-                                      {place.name} {isSelected}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            )}
+                            <div className="flex gap-1.5 mb-2">
+                              <input
+                                type="text"
+                                value={placeSearchQuery}
+                                onChange={(e) => setPlaceSearchQuery(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    if (placeSearchQuery.trim()) searchPlacesInDestination(placeSearchQuery, onboardingData.destination);
+                                  }
+                                }}
+                                placeholder={`Search cafes, monuments, beaches in ${onboardingData.destination}...`}
+                                className="flex-1 px-3 py-1.5 bg-white border border-slate-200 focus:border-sky-500 rounded-lg text-xs outline-none text-slate-700 transition font-medium placeholder:font-normal"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (placeSearchQuery.trim()) searchPlacesInDestination(placeSearchQuery, onboardingData.destination);
+                                }}
+                                className="px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs font-bold transition flex items-center gap-1 shadow-sm"
+                              >
+                                Search
+                              </button>
+                            </div>
+
+                            {isFetchingPlaces && <p className="text-xs text-slate-500 italic py-1">Searching Google Maps...</p>}
+                            {placesError && <p className="text-xs text-red-500 py-1">{placesError}</p>}
+
+                            {(() => {
+                              const mustVisit = onboardingData.mustVisitPlaces || [];
+                              // Keep selected tags pinned at the top so successive searches never hide what the user already checked
+                              const combinedPlaces = [
+                                ...mustVisit.map(name => ({ name, place_id: `selected-${name}` })),
+                                ...topAttractions.filter(p => !mustVisit.includes(p.name))
+                              ];
+
+                              return !isFetchingPlaces && combinedPlaces.length > 0 ? (
+                                <div className="flex flex-col gap-1 mt-2 max-h-24 overflow-y-auto pr-1 border border-slate-200 bg-white rounded-lg p-1.5 shadow-inner">
+                                  {combinedPlaces.map((place) => {
+                                    const isSelected = mustVisit.includes(place.name);
+                                    return (
+                                      <button
+                                        key={place.place_id}
+                                        type="button"
+                                        onClick={() => {
+                                          const newPlaces = isSelected
+                                            ? mustVisit.filter(p => p !== place.name)
+                                            : [...mustVisit, place.name];
+                                          setOnboardingData({ ...onboardingData, mustVisitPlaces: newPlaces });
+                                        }}
+                                        className={`w-full text-left text-[12px] px-2.5 py-1.5 rounded-md transition-all flex items-center justify-between ${isSelected ? 'bg-sky-50 text-sky-700 font-semibold border border-sky-200' : 'text-slate-700 hover:bg-slate-50 border border-transparent'}`}
+                                      >
+                                        <span className="truncate pr-2">{place.name}</span>
+
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              ) : null;
+                            })()}
                           </div>
                         )}
 
                         {!onboardingData.isExploring && (
                           <>
                             <div>
-                              <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Starting From (Origin)</label>
+                              <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Starting From / Origin (Optional)</label>
                               <input value={onboardingData.origin} onChange={(e) => setOnboardingData({ ...onboardingData, origin: e.target.value })} placeholder="e.g. Bhubaneswar" className="w-full mt-1 px-4 py-2.5 bg-slate-100/50 border-2 border-transparent focus:border-sky-600 rounded-xl outline-none text-sm transition" />
                             </div>
                             <div>
@@ -1102,7 +1639,7 @@ export default function Chat() {
                       </div>
 
                       <div className="pt-2">
-                        <button onClick={() => onboardingData.isExploring ? setOnboardingStep(5) : setOnboardingStep(3)} disabled={!onboardingData.destination || (!onboardingData.isExploring && (!onboardingData.origin || !onboardingData.days))} className="w-full py-3 bg-sky-600 text-white rounded-xl font-bold text-base hover:bg-sky-700 transition disabled:opacity-50">
+                        <button onClick={() => onboardingData.isExploring ? setOnboardingStep(5) : setOnboardingStep(3)} disabled={!onboardingData.destination || (!onboardingData.isExploring && !onboardingData.days)} className="w-full py-3 bg-sky-600 text-white rounded-xl font-bold text-base hover:bg-sky-700 transition disabled:opacity-50">
                           Next
                         </button>
                       </div>
@@ -1125,10 +1662,13 @@ export default function Chat() {
 
                       {onboardingData.transportBooked === 'yes' && (
                         <div className="text-left animate-fade-in space-y-3">
-                          <div>
-                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Arrival Station / Airport</label>
-                            <input value={onboardingData.arrivalStation} onChange={(e) => setOnboardingData({ ...onboardingData, arrivalStation: e.target.value })} placeholder="e.g. Puri Railway Station" className="w-full mt-1 px-4 py-2.5 bg-slate-100/50 border-2 focus:border-sky-600 rounded-xl outline-none text-sm transition" />
-                          </div>
+                          <StationSearchInput
+                            label="Arrival Station / Airport"
+                            value={onboardingData.arrivalStation}
+                            onChange={(val) => setOnboardingData({ ...onboardingData, arrivalStation: val })}
+                            placeholder="e.g. Puri Railway Station"
+                            destination={onboardingData.destination}
+                          />
                           <div>
                             <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Approximate Arrival Date & Time</label>
                             <DateTimeSplitInput value={onboardingData.arrivalTime} onChange={(val) => setOnboardingData({ ...onboardingData, arrivalTime: val })} />
@@ -1170,15 +1710,24 @@ export default function Chat() {
 
                       {onboardingData.hotelBooked === 'yes' && (
                         <div className="text-left animate-fade-in">
-                          <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Exact Hotel Name / Address</label>
-                          <input value={onboardingData.hotelAddress} onChange={(e) => setOnboardingData({ ...onboardingData, hotelAddress: e.target.value })} placeholder="e.g. Mayfair Heritage, Puri" className="w-full mt-1 px-4 py-2.5 bg-slate-100/50 border-2 focus:border-sky-600 rounded-xl outline-none text-sm transition" />
+                          <HotelBookedSearch
+                            value={onboardingData.hotelAddress}
+                            onChange={(val) => setOnboardingData({ ...onboardingData, hotelAddress: val })}
+                            placeholder="e.g. Mayfair Heritage, Puri"
+                            destination={onboardingData.destination}
+                          />
                         </div>
                       )}
 
                       {onboardingData.hotelBooked === 'no' && (
-                        <div className="text-left animate-fade-in">
-                          <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Preferred Area / Neighborhood (Optional)</label>
-                          <input value={onboardingData.hotelAddress} onChange={(e) => setOnboardingData({ ...onboardingData, hotelAddress: e.target.value })} placeholder="e.g. Near the Beach" className="w-full mt-1 px-4 py-2.5 bg-slate-100/50 border-2 focus:border-sky-600 rounded-xl outline-none text-sm transition" />
+                        <div className="text-left animate-fade-in space-y-2">
+                          <p className="text-xs text-sky-800 font-medium bg-sky-50 p-2.5 rounded-xl border border-sky-100">
+                            No problem! We will schedule your itinerary around your Must-Visit attractions. You can pick your ideal hotel on the interactive map in the Planner page later!
+                          </p>
+                          <div>
+                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Preferred Area / Vibe (Optional)</label>
+                            <input value={onboardingData.hotelAddress || ""} onChange={(e) => setOnboardingData({ ...onboardingData, hotelAddress: e.target.value })} placeholder="e.g. Near Sea Beach or Downtown" className="w-full mt-1 px-4 py-2 bg-slate-100/50 border-2 focus:bg-white focus:border-sky-600 rounded-xl outline-none text-sm transition" />
+                          </div>
                         </div>
                       )}
 
@@ -1204,10 +1753,13 @@ export default function Chat() {
 
                       {onboardingData.returnTransportBooked === 'yes' && (
                         <div className="text-left animate-fade-in space-y-3">
-                          <div>
-                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Departure Station / Airport</label>
-                            <input value={onboardingData.departureStation} onChange={(e) => setOnboardingData({ ...onboardingData, departureStation: e.target.value })} placeholder="e.g. Puri Railway Station" className="w-full mt-1 px-4 py-2.5 bg-slate-100/50 border-2 focus:border-sky-600 rounded-xl outline-none text-sm transition" />
-                          </div>
+                          <StationSearchInput
+                            label="Departure Station / Airport"
+                            value={onboardingData.departureStation}
+                            onChange={(val) => setOnboardingData({ ...onboardingData, departureStation: val })}
+                            placeholder="e.g. Puri Railway Station"
+                            destination={onboardingData.destination}
+                          />
                           <div>
                             <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Approximate Departure Date & Time</label>
                             <DateTimeSplitInput value={onboardingData.departureTime} onChange={(val) => setOnboardingData({ ...onboardingData, departureTime: val })} />
@@ -1216,13 +1768,19 @@ export default function Chat() {
                       )}
 
                       {onboardingData.returnTransportBooked === 'no' && (
-                        <div className="p-3 bg-sky-50 rounded-xl border border-sky-100 text-left animate-fade-in">
-                          <p className="text-xs text-sky-800 font-medium">No problem! We'll just plan based on the number of days you selected.</p>
+                        <div className="text-left animate-fade-in space-y-3">
+                          <div className="p-3 bg-orange-50 rounded-xl border border-orange-100 mb-2">
+                            <p className="text-xs text-orange-800 font-medium">No worries! Let us know your expected departure time so we can perfectly plan your final day activities.</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Expected Departure Date & Time</label>
+                            <DateTimeSplitInput value={onboardingData.departureTime} onChange={(val) => setOnboardingData({ ...onboardingData, departureTime: val })} />
+                          </div>
                         </div>
                       )}
 
                       <div className="pt-2">
-                        <button onClick={() => setOnboardingStep(6)} disabled={onboardingData.returnTransportBooked === 'yes' && (!onboardingData.departureStation || !onboardingData.departureTime)} className="w-full py-3 bg-sky-600 text-white rounded-xl font-bold text-base hover:bg-sky-700 transition disabled:opacity-50">Next</button>
+                        <button onClick={() => setOnboardingStep(6)} disabled={(onboardingData.returnTransportBooked === 'yes' && (!onboardingData.departureStation || !onboardingData.departureTime)) || (onboardingData.returnTransportBooked === 'no' && !onboardingData.departureTime)} className="w-full py-3 bg-sky-600 text-white rounded-xl font-bold text-base hover:bg-sky-700 transition disabled:opacity-50">Next</button>
                       </div>
                     </motion.div>
                   )}
