@@ -60,6 +60,7 @@ import Dropdown from '../components/common/Dropdown';
 import SEO from '../components/common/SEO';
 import { GOOGLE_MAPS_API_KEY } from '../utils/googleMaps';
 import { fetchPhoto } from '../utils/unsplash';
+import { buildMapVisuals, fetchRoadRoute } from '../utils/mapRouting';
 
 const googleLibraries = ['places'];
 
@@ -943,56 +944,12 @@ export default function Planner() {
     setDayOrder(prev => [...prev, nextDayId]);
   };
 
-  // Map Data Logic
-  const mapMarkers = [];
-  const mapPolylines = [];
   const visibleDays = selectedDayId === "all" ? displayDayOrder : [selectedDayId];
 
-  // 🔥 CUMULATIVE COUNTER: Keeps track of marker numbers across ALL days
-  let cumulativeIndex = 1;
-
-  // We scan ALL days to keep the numbering consistent
-  displayDayOrder.forEach(dayId => {
-    const day = displayDays[dayId];
-    if (!day) return;
-
-    // Check if this specific day is the focused one (or if everything is focused)
-    const isFocused = selectedDayId === "all" || selectedDayId === dayId;
-    const coords = [];
-
-    (day.items || []).forEach((item) => {
-
-      // 🛠️ UNIVERSAL COORDINATE RESOLVER: Forces everything to [Number, Number]
-      const rawLat = item.coords?.[0] ?? item.lat ?? item.location?.lat;
-      const rawLng = item.coords?.[1] ?? item.lng ?? item.location?.lng;
-
-      const finalLat = Number(rawLat);
-      const finalLng = Number(rawLng);
-      const pos = (!isNaN(finalLat) && !isNaN(finalLng)) ? [finalLat, finalLng] : null;
-
-      if (pos) {
-        mapMarkers.push({
-          ...item,
-          dayColor: day.color,
-          number: cumulativeIndex,
-          dayId,
-          pos,
-          isFocused
-        });
-        coords.push(pos);
-        cumulativeIndex++;
-      }
-    });
-
-    if (coords.length > 1) {
-      mapPolylines.push({
-        coords,
-        color: day.color,
-        dayId,
-        isFocused
-      });
-    }
-  });
+  // ⚡ TypeScript Map Data Logic: Seamlessly delegates coordinate resolution and sequencing to our strict TS engine!
+  const { markers: mapMarkers, polylines: mapPolylines } = useMemo(() => {
+    return buildMapVisuals(displayDayOrder, displayDays, selectedDayId);
+  }, [displayDayOrder, displayDays, selectedDayId]);
 
   // 🗺️ Automated Map Camera: Fits all pins into view or pans directly to trip destination!
   useEffect(() => {
@@ -1011,43 +968,24 @@ export default function Planner() {
 
   const [directions, setDirections] = useState(null);
 
-  // 🛣️ Real Road Directions: Fetches actual street paths between stops
+  // 🛣️ Real Road Directions (TypeScript Engine): Fetches actual street road paths between stops
   useEffect(() => {
+    let isMounted = true;
     if (!window.google || mapMarkers.length < 2 || selectedDayId === 'all') {
       setDirections(null);
       return;
     }
 
     const focusedMarkers = mapMarkers.filter(m => m.isFocused);
-    if (focusedMarkers.length < 2) {
-      setDirections(null);
-      return;
-    }
-
-    const directionsService = new window.google.maps.DirectionsService();
-    const origin = { lat: Number(focusedMarkers[0].pos[0]), lng: Number(focusedMarkers[0].pos[1]) };
-    const destination = { lat: Number(focusedMarkers[focusedMarkers.length - 1].pos[0]), lng: Number(focusedMarkers[focusedMarkers.length - 1].pos[1]) };
-    const waypoints = focusedMarkers.slice(1, -1).map(m => ({
-      location: { lat: Number(m.pos[0]), lng: Number(m.pos[1]) },
-      stopover: true
-    }));
-
-    directionsService.route(
-      {
-        origin,
-        destination,
-        waypoints,
-        travelMode: window.google.maps.TravelMode.DRIVING,
-      },
-      (result, status) => {
-        if (status === window.google.maps.DirectionsStatus.OK) {
-          setDirections(result);
-        } else {
-          console.error(`Directions request failed: ${status}`);
-          setDirections(null);
-        }
+    fetchRoadRoute(focusedMarkers, 'DRIVING').then(res => {
+      if (isMounted && res) {
+        setDirections(res);
+      } else if (isMounted) {
+        setDirections(null);
       }
-    );
+    });
+
+    return () => { isMounted = false; };
   }, [mapMarkers, selectedDayId]);
 
   // 🌟 Google Places Popular Spots Search + Free Unsplash Photo Integration (Zero Google Photo Costs!)
@@ -1171,6 +1109,25 @@ export default function Planner() {
       labelOrigin: new window.google.maps.Point(18, 18) // Center the native label
     };
   };
+
+  // 🛡️ GUARANTEED ARRAY DEFENSE: Protect against non-array cache, state, or legacy localStorage formats
+  const safeSavedPlaces = Array.isArray(savedPlaces) ? savedPlaces : [];
+  const safeAiNearbyPlaces = Array.isArray(aiNearbyPlaces) ? aiNearbyPlaces : [];
+  const safeLivePopularPlaces = Array.isArray(livePopularPlaces) ? livePopularPlaces : [];
+
+  const displayedExplorationPlaces = useMemo(() => {
+    if (isLoadingPopular) return [];
+    if (searchQuery.trim()) {
+      return [...safeSavedPlaces, ...safeAiNearbyPlaces, ...safeLivePopularPlaces].filter(p =>
+        (p?.name || p?.title || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (p?.desc || "").toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    }
+    if (activeTab === "drafts" || activeTab === "saved") {
+      return safeSavedPlaces;
+    }
+    return [...safeAiNearbyPlaces, ...safeLivePopularPlaces];
+  }, [isLoadingPopular, searchQuery, safeSavedPlaces, safeAiNearbyPlaces, safeLivePopularPlaces, activeTab]);
 
   return (
     <div className="flex-1 w-full bg-slate-50 font-sans grid grid-cols-1 lg:grid-cols-[450px_1fr_400px] gap-6 p-4 sm:px-6 sm:pt-6 sm:pb-4 overflow-hidden no-scrollbar min-h-0">
@@ -2090,7 +2047,7 @@ export default function Planner() {
                   )}
 
                   {/* EMPTY STATE FOR SAVED & DRAFTS */}
-                  {!searchQuery.trim() && (activeTab === "drafts" || activeTab === "saved") && savedPlaces.length === 0 && (
+                  {!searchQuery.trim() && (activeTab === "drafts" || activeTab === "saved") && safeSavedPlaces.length === 0 && (
                     <div className="flex flex-col items-center justify-center mt-6 py-8 px-6 text-center bg-white rounded-3xl border border-slate-100 shadow-sm">
                       <h3 className="text-base font-extrabold text-slate-800 mb-2">Your drafts pocket is empty!</h3>
                       <p className="text-xs text-slate-500 font-medium leading-relaxed mb-5 max-w-[230px]">
@@ -2109,20 +2066,14 @@ export default function Planner() {
                   )}
 
                   {/* EMPTY STATE FOR POPULAR SPOTS */}
-                  {!isLoadingPopular && (activeTab === "popular" || activeTab === "nearby") && (aiNearbyPlaces || []).length === 0 && (livePopularPlaces || []).length === 0 && !searchQuery.trim() && (
+                  {!isLoadingPopular && (activeTab === "popular" || activeTab === "nearby") && safeAiNearbyPlaces.length === 0 && safeLivePopularPlaces.length === 0 && !searchQuery.trim() && (
                     <div className="flex flex-col items-center justify-center mt-4 py-8 px-6 text-center bg-white rounded-3xl border border-slate-100 shadow-sm">
                       <h3 className="text-sm font-extrabold text-slate-700 mb-1">No spots found nearby</h3>
                       <p className="text-xs text-slate-400">Try zooming out on the map to expand your exploration radius.</p>
                     </div>
                   )}
 
-                  {(isLoadingPopular ? [] : (searchQuery.trim()
-                    ? [...(savedPlaces || []), ...(aiNearbyPlaces || []), ...(livePopularPlaces || [])].filter(p =>
-                      (p?.name || p?.title || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-                      (p?.desc || "").toLowerCase().includes(searchQuery.toLowerCase())
-                    )
-                    : ((activeTab === "drafts" || activeTab === "saved") ? (savedPlaces || []) : [...(aiNearbyPlaces || []), ...(livePopularPlaces || [])])
-                  )).map((place, idx) => (
+                  {displayedExplorationPlaces.map((place, idx) => (
                     <Draggable
                       key={place.id || `place-${idx}`}
                       draggableId={String(place.id || `place-${idx}`)}
