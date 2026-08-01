@@ -1257,7 +1257,7 @@ export default function Chat() {
     const { destination, days, budget, tripName, people, vibe, origin, arrivalStation, arrivalTime, departureStation, departureTime, hotelAddress, isExploring, mustVisitPlaces } = onboardingData;
 
     try {
-      try { sessionStorage.setItem('STEP_ONE_MUST_VISIT', JSON.stringify(mustVisitPlaces || [])); } catch(e) {}
+      try { sessionStorage.setItem('STEP_ONE_MUST_VISIT', JSON.stringify(mustVisitPlaces || [])); } catch (e) { }
       const heroImage = await api.unsplash.fetchPhoto(destination || tripName || "Travel");
       const tripPayload = {
         title: tripName || (destination ? `${destination} Adventure` : `Surprise Trip`),
@@ -1612,7 +1612,7 @@ export default function Chat() {
                                             ? mustVisit.filter(p => p !== place.name)
                                             : [...mustVisit, place.name];
                                           setOnboardingData({ ...onboardingData, mustVisitPlaces: newPlaces });
-                                          try { sessionStorage.setItem('STEP_ONE_MUST_VISIT', JSON.stringify(newPlaces)); } catch(e) {}
+                                          try { sessionStorage.setItem('STEP_ONE_MUST_VISIT', JSON.stringify(newPlaces)); } catch (e) { }
                                         }}
                                         className={`w-full text-left text-[12px] px-2.5 py-1.5 rounded-md transition-all flex items-center justify-between ${isSelected ? 'bg-sky-50 text-sky-700 font-semibold border border-sky-200' : 'text-slate-700 hover:bg-slate-50 border border-transparent'}`}
                                       >
@@ -1997,47 +1997,12 @@ export default function Chat() {
           {/* ══════════ RIGHT PANEL ══════════ */}
           <aside className="h-fit lg:h-full">
             <div className="h-[500px] lg:h-[570px] rounded-[32px] bg-white shadow-2xl border border-slate-100 flex flex-col relative">
-              {/* FLOATING TOGGLE */}
-              {activeTab === "itinerary" && (
-                <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 flex gap-1 bg-slate-100 p-1 rounded-full shadow-lg z-50 border border-white">
-                  <button
-                    onClick={() => setActivePlanView("ai")}
-                    className={`px-4 py-1.5 text-xs font-bold rounded-full transition-all ${activePlanView === "ai" ? "bg-white text-slate-800 shadow-sm" : "text-slate-400 hover:text-slate-600"}`}
-                  >
-                    AI Plan
-                  </button>
-                  <button
-                    onClick={() => setActivePlanView("user")}
-                    className={`px-4 py-1.5 text-xs font-bold rounded-full transition-all flex items-center gap-1.5 ${activePlanView === "user" ? "bg-white text-slate-800 shadow-sm" : "text-slate-400 hover:text-slate-600"}`}
-                  >
-                    Your Plan <Edit3 size={12} />
-                  </button>
-                </div>
-              )}
-
-              {/* Tabs */}
-              <div className="px-4 sm:px-11 pt-6 mt-1.5 flex justify-between overflow-x-auto no-scrollbar">
-                <div className="flex gap-2 text-xs sm:text-s font-semibold whitespace-nowrap">
-                  {["itinerary", "places", "nearby"].map((tab) => (
-                    <button
-                      key={tab}
-                      onClick={() => setActiveTab(tab)}
-                      className={`px-3 sm:px-5.5 py-1.5 pb-2 rounded-full border transition-all duration-200 ${activeTab === tab
-                        ? "bg-slate-900 text-white border-slate-800"
-                        : "bg-white text-slate-600 border-sky-200 hover:bg-sky-100 hover:border-sky-400"
-                        }`}
-                    >
-                      {tab === "itinerary"
-                        ? "Itinerary"
-                        : tab === "places"
-                          ? "Places"
-                          : "Explore Nearby"}
-                    </button>
-                  ))}
-                </div>
+              {/* HEADER TITLE */}
+              <div className="pt-1.5 pb-0 text-center shrink-0">
+                <h2 className="text-[30px] font-bold text-slate-800 tracking-tight">Itinerary</h2>
               </div>
 
-              {/* ── ITINERARY TAB ── */}
+              {/* ── ITINERARY DISPLAY ── */}
               <AnimatePresence mode="wait">
                 {activeTab === "itinerary" && (
                   <motion.div
@@ -2046,7 +2011,7 @@ export default function Chat() {
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.96, y: -10 }}
                     transition={{ duration: 0.25, ease: "easeOut" }}
-                    className="absolute top-[70px] left-1/2 -translate-x-1/2 w-[85%] z-20"
+                    className="absolute top-[64px] left-1/2 -translate-x-1/2 w-[85%] z-20"
                   >
                     {/* Day filter */}
                     <div className="sticky top-[-16px] z-30 mb-4 px-2 py-3 bg-white rounded-2xl border border-slate-100 shadow-sm flex gap-2 overflow-x-auto no-scrollbar">
@@ -2183,12 +2148,12 @@ export default function Chat() {
                       animate={{ opacity: 1, scale: 1 }}
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
-                      onClick={() => navigate("/bookings")}
+                      onClick={() => navigate("/planner")}
                       disabled={!activeItineraryToRender}
-                      className="w-full py-4 rounded-2xl bg-gradient-to-r from-sky-700 to-sky-500 text-white font-bold text-sm shadow-xl shadow-sky-100 flex items-center justify-center gap-3 hover:shadow-2xl hover:shadow-sky-300 transition-all duration-300 disabled:opacity-40"
+                      className="w-full py-4 rounded-2xl bg-sky-600 text-white font-bold text-sm shadow-xl shadow-sky-100 flex items-center justify-center gap-3 hover:shadow-2xl hover:shadow-sky-300 transition-all duration-300 disabled:opacity-40"
                     >
-                      <Sparkles size={18} />
-                      Finalize & Show Bookings
+
+                      Open & Customize in Planner
                       <ChevronRight size={18} />
                     </motion.button>
                   </motion.div>

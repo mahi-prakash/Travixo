@@ -1149,18 +1149,29 @@ export default function Planner() {
           {/* Fixed Header */}
           <div className="p-6 pb-2 shrink-0 bg-white/50 backdrop-blur-md z-20 rounded-[40px]">
             <div className="flex flex-col gap-4 mb-4">
-              {/* Header Row: Title/Selector & Plan Controls */}
-              <div className="flex items-center justify-between relative z-30">
-                <div className="flex flex-col">
-                  <h2 className="text-[28px] font-bold text-slate-800 tracking-tight">Itinerary</h2>
+              {/* Header Row 1: Dedicated Title Lane */}
+              <div className="relative z-30">
+                <h2 className="text-[28px] font-bold text-slate-800 tracking-tight">Itinerary</h2>
+              </div>
 
-                  {/* Current Trip Display */}
-
+              {/* Row 2: Plan Toggle (Left) & Action Controls (Right) */}
+              <div className="flex items-center justify-between relative z-20">
+                <div className="flex p-1 bg-slate-100/30 backdrop-blur-md rounded-2xl border border-slate-200/50 shadow-sm h-9 items-center">
+                  <button
+                    onClick={() => setPlanMode('ai')}
+                    className={`h-full px-4 text-[9.5px] font-black rounded-2xl transition-all flex items-center gap-2 ${planMode === 'ai' ? 'bg-white shadow-sm text-slate-600 border border-slate-200/50' : 'text-slate-400 hover:text-slate-600'}`}
+                  >
+                    AI PLAN
+                  </button>
+                  <button
+                    onClick={() => setPlanMode('user')}
+                    className={`h-full px-4 text-[9.5px] font-black rounded-2xl transition-all flex items-center gap-2 ${planMode === 'user' ? 'bg-white shadow-sm text-slate-600 border border-slate-200/50' : 'text-slate-400 hover:text-slate-600'}`}
+                  >
+                    YOUR PLAN
+                  </button>
                 </div>
 
-
-                {/* CONTROL POSITION: Adjust 'translate-y-[0px]' to move these buttons up or down */}
-                <div className="flex items-center gap-2 relative translate-y-[-4px]">
+                <div className="flex items-center gap-2">
                   {/* Save Changes Button */}
                   {planMode === 'user' && (
                     <button
@@ -1237,24 +1248,6 @@ export default function Planner() {
                       )}
                     </Dropdown>
                   )}
-                </div>
-              </div>
-
-              {/* Row 2: Centered Plan Toggle */}
-              <div className="flex justify-center relative z-20">
-                <div className="flex p-1 bg-slate-100/30 backdrop-blur-md rounded-2xl border border-slate-200/50 shadow-sm h-9 items-center">
-                  <button
-                    onClick={() => setPlanMode('ai')}
-                    className={`h-full px-4 text-[9.5px] font-black rounded-2xl transition-all flex items-center gap-2 ${planMode === 'ai' ? 'bg-white shadow-sm text-slate-600 border border-slate-200/50' : 'text-slate-400 hover:text-slate-600'}`}
-                  >
-                    AI PLAN
-                  </button>
-                  <button
-                    onClick={() => setPlanMode('user')}
-                    className={`h-full px-4 text-[9.5px] font-black rounded-2xl transition-all flex items-center gap-2 ${planMode === 'user' ? 'bg-white shadow-sm text-slate-600 border border-slate-200/50' : 'text-slate-400 hover:text-slate-600'}`}
-                  >
-                    YOUR PLAN
-                  </button>
                 </div>
               </div>
 

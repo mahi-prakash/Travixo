@@ -9,7 +9,7 @@ const ProfileDashboard = ({ user }) => {
   const [activeNav, setActiveNav] = useState('Profile');
   const [activeTab, setActiveTab] = useState('Overview');
 
-  const navItems = ['Chat', 'Planner', 'Bookings', 'Explore', 'Profile'];
+  const navItems = ['Chat', 'Planner', 'Explore', 'Profile'];
   const profileTabs = ['Overview', 'My Trips', 'Memories', 'Settings'];
 
   // Bucket list state for interactivity

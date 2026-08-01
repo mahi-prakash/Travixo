@@ -23,7 +23,6 @@ const MainLayout = () => {
   const navItems = [
     { to: "/chat", label: "Chat" },
     { to: "/planner", label: "Planner" },
-    { to: "/bookings", label: "Bookings" },
     { to: "/explore", label: "Explore" },
     { to: "/profile", label: "Profile" },
   ];
