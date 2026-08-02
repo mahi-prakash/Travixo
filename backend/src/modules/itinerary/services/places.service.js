@@ -12,7 +12,6 @@ const verifyPlacesWithGoogle = async (places, destination) => {
 
   if (!GOOGLE_MAPS_API_KEY) {
     console.warn("No Google Maps API Key found on backend. Returning mock data or failing.");
-    // In a real scenario, we should throw an error, but let's return the AI places with missing coords for now to not break the app completely if keys are missing
     return places.map((p, i) => ({ ...p, id: `unverified-${i}`, coords: null }));
   }
 
@@ -30,7 +29,6 @@ const verifyPlacesWithGoogle = async (places, destination) => {
             'Content-Type': 'application/json',
             'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
             'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location,places.rating',
-            // Spoof the referer so Google accepts the request even if the API key is restricted to websites
             'Referer': 'https://www.thetravstory.com/'
           }
         }

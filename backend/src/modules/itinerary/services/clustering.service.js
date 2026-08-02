@@ -33,29 +33,21 @@ const clusterPlacesIntoDays = (places, requestedDays) => {
         return reject(err);
       }
 
-      // 'res' is an array of clusters. Each cluster has { centroid, cluster, clusterInd }
-      // clusterInd is an array of indices of the original 'vectors' array that belong to this cluster
-      
       const daysObject = {};
       
       // Sort clusters by centroid longitude or latitude to make a rough geographical sequence
-      // Optional, but helps prevent criss-crossing the city day by day
       const sortedClusters = res.sort((a, b) => a.centroid[1] - b.centroid[1]);
 
       sortedClusters.forEach((cluster, idx) => {
         const dayNumber = idx + 1;
         const dayId = `day-${dayNumber}`;
         
-        // Map the indices back to the original place objects with logical sequential schedules
         const timeSlots = ["10:00 AM", "01:30 PM", "04:30 PM", "07:30 PM", "09:00 PM"];
         const dayPlaces = cluster.clusterInd.map((i, placeIdx) => ({
           ...places[i],
           time: places[i].time || timeSlots[placeIdx] || `${9 + placeIdx}:00 AM`
         }));
         
-        // Optionally sort dayPlaces to minimize distance within the day (TSP approach)
-        // For now, we'll just keep the order they were in
-
         daysObject[dayId] = {
           day: dayNumber,
           id: dayId,

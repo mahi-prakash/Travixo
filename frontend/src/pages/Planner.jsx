@@ -414,7 +414,7 @@ export default function Planner() {
 
   // 🌍 Geocode Actual Trip Destination: Never fall back to Paris if pins aren't loaded yet!
   useEffect(() => {
-    const destName = activeTrip?.destination || activeTrip?.name?.split(' ')[0] || activeTrip?.title?.split(' ')[0];
+    const destName = activeTrip?.itinerary?.destination || activeTrip?.ai_itinerary?.destination || activeItinerary?.destination || aiSourceForCheck?.destination || activeTrip?.destination || activeTrip?.name?.split(' ')[0] || activeTrip?.title?.split(' ')[0];
     if (!destName || !window.google?.maps?.Geocoder) return;
     const geocoder = new window.google.maps.Geocoder();
     geocoder.geocode({ address: destName }, (results, status) => {
@@ -423,7 +423,53 @@ export default function Planner() {
         setDestinationCoords({ lat: loc.lat(), lng: loc.lng() });
       }
     });
-  }, [activeTrip?.destination, activeTrip?.name, activeTrip?.title, isLoaded]);
+  }, [activeTrip?.destination, activeTrip?.name, activeTrip?.title, activeTrip?.itinerary?.destination, activeTrip?.ai_itinerary?.destination, activeItinerary?.destination, aiSourceForCheck?.destination, isLoaded]);
+
+  // 📍 Automated Frontend Geocode Recovery: Instantly resolve GPS coordinates for items if missing from older generations
+  useEffect(() => {
+    if (!isLoaded || !window.google?.maps?.Geocoder || !days || Object.keys(days).length === 0) return;
+    const geocoder = new window.google.maps.Geocoder();
+    let madeChanges = false;
+    const updatedDays = JSON.parse(JSON.stringify(days));
+    const destName = activeTrip?.itinerary?.destination || activeTrip?.ai_itinerary?.destination || activeTrip?.destination || "";
+
+    const geocodePromises = [];
+
+    Object.entries(updatedDays).forEach(([dayId, day]) => {
+      (day.items || day.activities || []).forEach(item => {
+        const hasCoords = (item.coords && item.coords.length === 2 && item.coords[0] !== 0) || (item.lat && item.lng) || item.geocodingAttempted;
+        if (!hasCoords && (item.name || item.title || item.location)) {
+          const query = `${item.name || item.title} ${item.location || destName}`.trim();
+          item.geocodingAttempted = true;
+          geocodePromises.push(
+            new Promise(resolve => {
+              geocoder.geocode({ address: query }, (results, status) => {
+                if (status === "OK" && results?.[0]?.geometry?.location) {
+                  const loc = results[0].geometry.location;
+                  item.coords = [loc.lat(), loc.lng()];
+                  item.lat = loc.lat();
+                  item.lng = loc.lng();
+                  madeChanges = true;
+                }
+                resolve();
+              });
+            })
+          );
+        }
+      });
+    });
+
+    if (geocodePromises.length > 0) {
+      Promise.all(geocodePromises).then(() => {
+        if (madeChanges) {
+          setDays(updatedDays);
+          if (activeTripId && saveItineraryToCache) {
+            saveItineraryToCache(activeTripId, { ...activeItinerary, days: updatedDays });
+          }
+        }
+      });
+    }
+  }, [days, isLoaded, activeTripId]);
 
   // 🚗 Fetch Logistics (Distances & Times)
   useEffect(() => {
@@ -586,17 +632,16 @@ export default function Planner() {
     // 🛡️ GUARD: Wait for trips to finish loading before deciding what to initialize
     if (!activeTripId || loading) return;
 
-    // 🛡️ HARD STOP: If this specific trip is already initialized in state, DO NOT OVERWRITE
-    if (hasInitializedRef.current === activeTripId) {
-      return;
-    }
-
-
     const dbItinerary = activeTrip?.itinerary;
     const cachedItinerary = (itineraryCache || {})[activeTripId];
     const sourceItinerary = dbItinerary || cachedItinerary;
 
+    const initKey = `${activeTripId}_${sourceItinerary?.destination || activeTrip?.ai_itinerary?.destination || ''}_${JSON.stringify(sourceItinerary?.days || activeTrip?.ai_itinerary?.days || '').length}`;
 
+    // 🛡️ HARD STOP: If this specific trip and itinerary structure is already initialized in state, DO NOT OVERWRITE
+    if (hasInitializedRef.current === initKey) {
+      return;
+    }
 
     const hasDays = sourceItinerary?.days && (
       Array.isArray(sourceItinerary.days)
@@ -630,7 +675,7 @@ export default function Planner() {
       });
 
       setDays(normalizedDays);
-      hasInitializedRef.current = activeTripId;
+      hasInitializedRef.current = initKey;
     } else if (activeTrip?.ai_itinerary && sourceItinerary === null) {
       // 🛡️ ONLY seed from AI if Your Plan (itinerary) is ABSOLUTELY null (never touched)
       const aiDays = activeTrip.ai_itinerary.days || {};
@@ -653,7 +698,7 @@ export default function Planner() {
         };
       });
       setDays(normalizedAi);
-      hasInitializedRef.current = activeTripId;
+      hasInitializedRef.current = initKey;
       // 🔥 PERSIST: Save the initial copy to DB immediately so it's not null anymore
       const currentItin = activeTrip?.itinerary || {};
       const seededItin = { ...currentItin, days: normalizedAi };
@@ -1132,7 +1177,7 @@ export default function Planner() {
       sCenter = map.getCenter();
     }
 
-    const destName = activeTrip?.destination || activeTrip?.name?.split(' ')[0] || activeTrip?.title?.split(' ')[0] || "";
+    const destName = activeTrip?.itinerary?.destination || activeTrip?.ai_itinerary?.destination || activeItinerary?.destination || aiSourceForCheck?.destination || activeTrip?.destination || activeTrip?.name?.split(' ')[0] || activeTrip?.title?.split(' ')[0] || "";
     const queryText = `${searchQuery} ${destName}`.trim();
 
     const request = {

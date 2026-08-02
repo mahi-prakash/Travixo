@@ -1,7 +1,7 @@
 const Groq = require('groq-sdk');
 const { Mistral } = require('@mistralai/mistralai');
-const logger = require('../utils/logger');
-const { sendAlert } = require('../utils/notifier');
+const logger = require('../../../utils/logger');
+const { sendAlert } = require('../../../utils/notifier');
 
 // ─── Key Pooling & Blacklist Logic ──────────────────────────────────────────
 
@@ -39,14 +39,12 @@ function blacklistKey(key, ms) {
 }
 
 function parseRetryAfterMs(errMessage) {
-  // Groq format: "Please try again in 2m29.1s" or "45s"
   const minSecMatch = errMessage?.match(/(\d+)m([\d.]+)s/);
   if (minSecMatch) return (parseInt(minSecMatch[1]) * 60 + parseFloat(minSecMatch[2])) * 1000;
 
   const secMatch = errMessage?.match(/([\d.]+)s/);
   if (secMatch) return parseFloat(secMatch[1]) * 1000;
 
-  // Mistral usually gives a standard retry-after in headers, but if we only have the message:
   if (errMessage?.toLowerCase().includes('rate limit')) return 60 * 1000;
 
   return 30 * 1000; // default 30s
@@ -79,7 +77,6 @@ async function callGroq(messages) {
         const retryMs = parseRetryAfterMs(msg);
         const isTPD = msg.includes('TPD') || msg.toLowerCase().includes('tokens per day');
 
-        // If TPD exhausted, blacklist for a long time (until reset), else short skip
         const duration = isTPD ? Math.max(retryMs, 3600000) : retryMs;
         blacklistKey(key, duration);
 
@@ -88,9 +85,9 @@ async function callGroq(messages) {
         }
 
         logger.warn(`⚠️ ${keyLabel} ${isTPD ? 'TPD Exhausted' : 'Rate Limited'} — skipping for ${Math.ceil(duration / 1000)}s`);
-        continue; // Try next key
+        continue;
       } else if (status === 401) {
-        blacklistKey(key, 24 * 60 * 60 * 1000); // Invalid key - 24h blacklist
+        blacklistKey(key, 24 * 60 * 60 * 1000);
         sendAlert('Invalid/Expired AI Key', `Key: ${keyLabel} (Groq) has been rejected by the provider.`);
         logger.error(`❌ ${keyLabel} is INVALID or EXPIRED — removed from pool`);
         continue;
@@ -148,26 +145,21 @@ const aiResponseCache = new Map();
 const CACHE_TTL_MS = 1000 * 60 * 60 * 24; // 24 hours
 
 const generateAiResponse = async (messages) => {
-  // 1. Generate a unique cache key based on the prompt content
-  // We stringify the messages array to ensure identical prompts hit the cache
   const cacheKey = JSON.stringify(messages);
 
-  // 2. Check if the exact prompt was asked recently
   if (aiResponseCache.has(cacheKey)) {
     const cachedEntry = aiResponseCache.get(cacheKey);
     if (Date.now() < cachedEntry.expiry) {
       logger.info('⚡ Served AI response from IN-MEMORY CACHE! Latency bypassed.');
       return cachedEntry.data;
     } else {
-      aiResponseCache.delete(cacheKey); // Clean up expired entry
+      aiResponseCache.delete(cacheKey);
     }
   }
 
-  // 3. If not in cache, call the expensive AI providers
   try {
     const response = await callGroq(messages);
 
-    // 4. Save the successful response to the cache for future users
     aiResponseCache.set(cacheKey, {
       data: response,
       expiry: Date.now() + CACHE_TTL_MS
@@ -179,7 +171,6 @@ const generateAiResponse = async (messages) => {
       logger.warn('⚠️ All Groq keys exhausted — falling back to Mistral');
       const fallbackResponse = await callMistral(messages);
 
-      // Save Mistral fallback to cache as well
       aiResponseCache.set(cacheKey, {
         data: fallbackResponse,
         expiry: Date.now() + CACHE_TTL_MS

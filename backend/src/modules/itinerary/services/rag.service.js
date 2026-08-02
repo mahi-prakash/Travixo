@@ -1,4 +1,4 @@
-const logger = require('../utils/logger');
+const logger = require('../../../utils/logger');
 const { fetchGooglePlacesPool } = require('./places.service');
 
 // ─── 1. Wikipedia Fetcher ────────────────────────────────────────────────────
@@ -110,7 +110,6 @@ const fetchFullDestinationContext = async (destination, origin, arrivalStation, 
 
   logger.info(`⚡ RAG: Initiating multi-source fetch for "${destination}"`);
 
-  // Run all fetches at the exact same time
   const results = await Promise.allSettled([
     fetchWikipediaContext(destination),
     fetchLiveWeather(destination),
@@ -119,7 +118,6 @@ const fetchFullDestinationContext = async (destination, origin, arrivalStation, 
     fetchGooglePlacesPool(destination)
   ]);
 
-  // Extract successful strings and filter out empties
   const contextBlocks = results
     .filter(res => res.status === 'fulfilled' && res.value !== '')
     .map(res => res.value);
@@ -131,7 +129,6 @@ const fetchFullDestinationContext = async (destination, origin, arrivalStation, 
 
   logger.info(`✅ RAG: Successfully aggregated ${contextBlocks.length} data sources for "${destination}"`);
   
-  // Combine all strings into one giant context block
   return contextBlocks.join('\n\n');
 };
 

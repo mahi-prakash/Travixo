@@ -1,4 +1,7 @@
-// src/config/prompts.js
+/**
+ * @file Bounded Context: Itinerary Prompt Builder Service
+ * Encapsulates system prompts and AI personality instructions for itinerary curation.
+ */
 
 const getTravelPlannerPrompt = (destination) => `
 You are an ELITE Travel Planning Curator and Human Logistics Expert. 

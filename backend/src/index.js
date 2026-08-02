@@ -1,3 +1,4 @@
+// Environment configuration initialized
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -5,10 +6,10 @@ const logger = require('./utils/logger');
 const errorMiddleware = require('./middlewares/error.middleware');
 const { globalLimiter } = require('./middlewares/rateLimit.middleware');
 
-// Routes
-const messageRoutes = require('./routes/messages.routes.js');
-const reviewRoutes = require('./routes/reviews.routes.js');
-const logisticsRoutes = require('./routes/logistics.routes.js');
+// Domain Bounded Context Routes
+const itineraryRoutes = require('./modules/itinerary/itinerary.routes');
+const reviewRoutes = require('./modules/reviews/reviews.routes');
+const geoRoutingRoutes = require('./modules/geo-routing/geo-routing.routes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -29,9 +30,9 @@ app.use(express.json());
 app.use(globalLimiter); //it's work is to stop the spamming or DDOS attacks on the server so keep it on if u r not doing heavy local testing
 // ─── ROUTES ──────────────────────────────────────────────────────────────────
 
-app.use('/api/messages', messageRoutes);
+app.use('/api/messages', itineraryRoutes);
 app.use('/api/reviews', reviewRoutes);
-app.use('/api/logistics', logisticsRoutes);
+app.use('/api/logistics', geoRoutingRoutes);
 
 // Health Check / Root
 app.get('/', (req, res) => {
