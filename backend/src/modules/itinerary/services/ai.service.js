@@ -9,11 +9,11 @@ const groqKeys = [
   process.env.GROQ_API_KEY_1,
   process.env.GROQ_API_KEY_2,
   process.env.GROQ_API_KEY_3,
-  process.env.GROQ_API_KEY_4,
-  process.env.GROQ_API_KEY_5,
-  process.env.GROQ_API_KEY_6,
-  process.env.GROQ_API_KEY_7,
-  process.env.GROQ_API_KEY_8,
+  // process.env.GROQ_API_KEY_4,
+  // process.env.GROQ_API_KEY_5,
+  // process.env.GROQ_API_KEY_6,
+  // process.env.GROQ_API_KEY_7,
+  // process.env.GROQ_API_KEY_8,
 ].filter(k => k && !k.includes('YOUR_GROQ_KEY'));
 
 const mistralKeys = [
