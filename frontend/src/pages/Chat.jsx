@@ -786,9 +786,10 @@ export default function Chat() {
 
       let recoveredItinerary = null;
 
-      const messages = sortedData.map(msg => {
+      const messages = sortedData.flatMap(msg => {
         const from = msg.role === 'user' ? 'user' : 'bot';
         let text = msg.content;
+        let hadItinerary = false;
 
         // 🔍 RECOVERY & CLEANUP LOGIC
         if (from === "bot") {
@@ -798,7 +799,10 @@ export default function Chat() {
 
             if (raw) {
               const parsed = JSON.parse(raw);
-              if (parsed.days) recoveredItinerary = parsed;
+              if (parsed.days) {
+                recoveredItinerary = parsed;
+                hadItinerary = true;
+              }
             }
           } catch (e) { }
 
@@ -807,9 +811,30 @@ export default function Chat() {
             .replace(/\[[\w\s]+Itinerary\][\s\S]*?(\{[\s\S]*\})/gi, "")
             .replace(/\{[\s\S]*"days"[\s\S]*\}/gi, "")
             .trim();
+
+          const paragraphs = text ? text.split(/\n\n+/).map(p => p.trim()).filter(Boolean) : [];
+          const botMessages = paragraphs.map((p, idx) => ({
+            id: `${msg.id}-${idx}`,
+            from,
+            text: p,
+            createdAt: msg.created_at
+          }));
+
+          if (hadItinerary) {
+            botMessages.push({
+              id: `${msg.id}-itin`,
+              from,
+              text: "✨ **Your plan is ready!** I've created a copy in 'Your Plan' that you can now fully customize in the Planner. Feel free to add, remove, or move things around! 🗺️",
+              createdAt: msg.created_at
+            });
+          }
+
+          if (botMessages.length > 0) {
+            return botMessages;
+          }
         }
 
-        return { id: msg.id, from, text, createdAt: msg.created_at };
+        return [{ id: msg.id, from, text, createdAt: msg.created_at }];
       });
 
       if (recoveredItinerary) {
