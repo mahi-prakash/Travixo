@@ -398,6 +398,8 @@ export default function Planner() {
   const [selectedPlace, setSelectedPlace] = useState(null);
   const [hoveredMarkerId, setHoveredMarkerId] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearchingPlaces, setIsSearchingPlaces] = useState(false);
   const [addingPlace, setAddingPlace] = useState(null);
   const [addFeedback, setAddFeedback] = useState(null);
   const [editingTimeId, setEditingTimeId] = useState(null);
@@ -1110,24 +1112,103 @@ export default function Planner() {
     };
   };
 
+  // 🌟 Google Places Live Search handler for user search queries
+  const handlePlaceSearch = (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!searchQuery.trim() || !window.google?.maps?.places) {
+      if (!searchQuery.trim()) setSearchResults([]);
+      return;
+    }
+
+    setIsSearchingPlaces(true);
+    const service = new window.google.maps.places.PlacesService(map || document.createElement('div'));
+
+    let sCenter = null;
+    const sLat = mapMarkers[0]?.pos?.[0] || destinationCoords?.lat || baseCampHotel?.lat || map?.getCenter()?.lat() || null;
+    const sLng = mapMarkers[0]?.pos?.[1] || destinationCoords?.lng || baseCampHotel?.lng || map?.getCenter()?.lng() || null;
+    if (sLat && sLng) {
+      sCenter = { lat: Number(sLat), lng: Number(sLng) };
+    } else if (map && map.getCenter()) {
+      sCenter = map.getCenter();
+    }
+
+    const destName = activeTrip?.destination || activeTrip?.name?.split(' ')[0] || activeTrip?.title?.split(' ')[0] || "";
+    const queryText = `${searchQuery} ${destName}`.trim();
+
+    const request = {
+      query: queryText,
+      radius: 25000
+    };
+    if (sCenter) {
+      request.location = sCenter;
+    }
+
+    service.textSearch(request, async (results, status) => {
+      if (status === window.google.maps.places.PlacesServiceStatus.OK && results && results.length > 0) {
+        const topResults = results.slice(0, 10);
+        const enhanced = await Promise.all(
+          topResults.map(async (p, idx) => {
+            const photoQuery = `${p.name} ${p.types?.[0]?.replace(/_/g, ' ') || ''} ${destName}`.trim();
+            const photoUrl = await fetchPhoto(photoQuery);
+            return {
+              id: p.place_id || `google-search-${idx}-${Date.now()}`,
+              title: p.name,
+              name: p.name,
+              category: (p.types?.[0] || "Place").replace(/_/g, ' ').toUpperCase(),
+              rating: p.rating || (4.2 + (idx % 8) * 0.1).toFixed(1),
+              desc: p.formatted_address || p.vicinity || `Match for "${searchQuery}" near ${destName}`,
+              img: photoUrl || "https://images.unsplash.com/photo-1488646953014-85cb44e25828?q=80&w=600&auto=format&fit=crop",
+              coords: p.geometry?.location ? [p.geometry.location.lat(), p.geometry.location.lng()] : null,
+              isGooglePlace: true
+            };
+          })
+        );
+        setSearchResults(enhanced);
+      } else {
+        setSearchResults([]);
+      }
+      setIsSearchingPlaces(false);
+    });
+  };
+
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      setIsSearchingPlaces(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      handlePlaceSearch();
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [searchQuery, map, destinationCoords]);
+
   // 🛡️ GUARANTEED ARRAY DEFENSE: Protect against non-array cache, state, or legacy localStorage formats
   const safeSavedPlaces = Array.isArray(savedPlaces) ? savedPlaces : [];
   const safeAiNearbyPlaces = Array.isArray(aiNearbyPlaces) ? aiNearbyPlaces : [];
   const safeLivePopularPlaces = Array.isArray(livePopularPlaces) ? livePopularPlaces : [];
+  const safeSearchResults = Array.isArray(searchResults) ? searchResults : [];
 
   const displayedExplorationPlaces = useMemo(() => {
-    if (isLoadingPopular) return [];
+    if (isLoadingPopular || isSearchingPlaces) return [];
     if (searchQuery.trim()) {
-      return [...safeSavedPlaces, ...safeAiNearbyPlaces, ...safeLivePopularPlaces].filter(p =>
+      const localMatches = [...safeSavedPlaces, ...safeAiNearbyPlaces, ...safeLivePopularPlaces].filter(p =>
         (p?.name || p?.title || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
         (p?.desc || "").toLowerCase().includes(searchQuery.toLowerCase())
       );
+      const seen = new Set();
+      return [...safeSearchResults, ...localMatches].filter(p => {
+        const key = (p?.id || p?.place_id || p?.name || p?.title || "").toString().toLowerCase().trim();
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
     }
     if (activeTab === "drafts" || activeTab === "saved") {
       return safeSavedPlaces;
     }
     return [...safeAiNearbyPlaces, ...safeLivePopularPlaces];
-  }, [isLoadingPopular, searchQuery, safeSavedPlaces, safeAiNearbyPlaces, safeLivePopularPlaces, activeTab]);
+  }, [isLoadingPopular, isSearchingPlaces, searchQuery, safeSearchResults, safeSavedPlaces, safeAiNearbyPlaces, safeLivePopularPlaces, activeTab]);
 
   return (
     <div className="flex-1 w-full bg-slate-50 font-sans grid grid-cols-1 lg:grid-cols-[450px_1fr_400px] gap-6 p-4 sm:px-6 sm:pt-6 sm:pb-4 overflow-hidden no-scrollbar min-h-0">
@@ -1844,26 +1925,7 @@ export default function Planner() {
                           />
                         )}
 
-                        {/* 3. Numbered Markers */}
-                        {(() => {
-
-                          return mapMarkers.map((marker) => (
-                            <MarkerF
-                              key={`${marker.dayId}-${marker.id}-${marker.number}`}
-                              position={{ lat: Number(marker.pos[0]), lng: Number(marker.pos[1]) }}
-                              onClick={() => setSelectedPlace(marker)}
-                              zIndex={marker.isFocused ? 1000 : 1}
-                              icon={getMarkerIcon(marker.dayColor || '#0284c7', marker.isFocused)}
-                              label={{
-                                text: marker.number.toString(),
-                                color: '#1e293b', // Slate 800 for high contrast
-                                fontWeight: '900',
-                                fontSize: '13px',
-                                fontFamily: 'Inter, sans-serif'
-                              }}
-                            />
-                          ));
-                        })()}
+                        {/* 3. Numbered Markers - Pin point feature removed for now */}
                       </GoogleMap>
                     ) : (loadError || mapAuthFailed) ? (
                       <div className="absolute inset-0 flex flex-col items-center justify-center text-center bg-slate-100 overflow-hidden rounded-[24px]">
@@ -1994,8 +2056,15 @@ export default function Planner() {
           <div className="p-6 pb-2 shrink-0 bg-white/50 backdrop-blur-md z-20">
             <h2 className="text-2xl font-bold text-slate-800 mb-4">Add to Itinerary</h2>
 
-            <div className="relative group mb-4">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-sky-500 transition-colors" size={18} />
+            <form onSubmit={handlePlaceSearch} className="relative group mb-4">
+              <button
+                type="submit"
+                onClick={handlePlaceSearch}
+                title="Search Places"
+                className="absolute left-3.5 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-sky-600 transition-colors cursor-pointer rounded-lg hover:bg-slate-100/80 z-10"
+              >
+                <Search size={18} />
+              </button>
               <input
                 type="text"
                 value={searchQuery}
@@ -2003,7 +2072,7 @@ export default function Planner() {
                 placeholder={`Search places in ${activeTrip?.name?.split(' ')[0] || 'your destination'}...`}
                 className="w-full bg-white border border-slate-200 rounded-xl pl-12 pr-4 py-3 text-sm font-medium outline-none focus:border-sky-400 focus:ring-4 focus:ring-sky-100 transition-all shadow-sm"
               />
-            </div>
+            </form>
 
             <div className="flex bg-slate-100 p-1 rounded-xl">
               {['drafts', 'popular'].map(tab => (
@@ -2039,6 +2108,23 @@ export default function Planner() {
                     </div>
                   )}
 
+                  {/* LOADING STATE FOR SEARCH */}
+                  {searchQuery.trim() && isSearchingPlaces && (
+                    <div className="flex flex-col items-center justify-center py-10 px-6 text-center bg-white/50 backdrop-blur-sm rounded-3xl border border-slate-100/80 my-2">
+                      <div className="w-8 h-8 rounded-full border-2 border-sky-500 border-t-transparent animate-spin mb-3" />
+                      <p className="text-xs font-bold text-slate-700">Searching places for "{searchQuery}"...</p>
+                      <p className="text-[10px] text-slate-400 font-medium mt-1">Fetching verified spots from Google Places 🗺️</p>
+                    </div>
+                  )}
+
+                  {/* EMPTY STATE FOR SEARCH */}
+                  {!isSearchingPlaces && searchQuery.trim() && displayedExplorationPlaces.length === 0 && (
+                    <div className="flex flex-col items-center justify-center mt-4 py-8 px-6 text-center bg-white rounded-3xl border border-slate-100 shadow-sm">
+                      <h3 className="text-sm font-extrabold text-slate-700 mb-1">No places found for "{searchQuery}"</h3>
+                      <p className="text-xs text-slate-400">Try a different keyword or check spelling.</p>
+                    </div>
+                  )}
+
                   {/* EMPTY STATE FOR SAVED & DRAFTS */}
                   {!searchQuery.trim() && (activeTab === "drafts" || activeTab === "saved") && safeSavedPlaces.length === 0 && (
                     <div className="flex flex-col items-center justify-center mt-6 py-8 px-6 text-center bg-white rounded-3xl border border-slate-100 shadow-sm">
@@ -2050,11 +2136,11 @@ export default function Planner() {
                   )}
 
                   {/* LOADING STATE FOR POPULAR SPOTS */}
-                  {(activeTab === "popular" || activeTab === "nearby") && isLoadingPopular && (
+                  {!searchQuery.trim() && (activeTab === "popular" || activeTab === "nearby") && isLoadingPopular && (
                     <div className="flex flex-col items-center justify-center py-10 px-6 text-center bg-white/50 backdrop-blur-sm rounded-3xl border border-slate-100/80 my-2">
                       <div className="w-8 h-8 rounded-full border-2 border-sky-500 border-t-transparent animate-spin mb-3" />
                       <p className="text-xs font-bold text-slate-700">Curating top attractions & dining...</p>
-                      <p className="text-[10px] text-slate-400 font-medium mt-1">Combining Google Places prominence with Unsplash imagery 🎨</p>
+
                     </div>
                   )}
 
@@ -2120,7 +2206,7 @@ export default function Planner() {
                               </div>
                               {/* Add Action */}
                               <div className="relative flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-                                {(activeTab === "popular" || activeTab === "nearby") && !placePool.some(p => p.id === place.id || p.name === (place.name || place.title)) && (
+                                {(activeTab === "popular" || activeTab === "nearby" || Boolean(searchQuery.trim())) && !placePool.some(p => p.id === place.id || p.name === (place.name || place.title)) && (
                                   <button
                                     onClick={() => {
                                       pushToHistory();
