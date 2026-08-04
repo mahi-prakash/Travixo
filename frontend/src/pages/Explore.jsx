@@ -179,7 +179,11 @@ const PlaceCard = ({ place, liked, onLike, onOpen }) => (
     onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = ""; }}
   >
     <div style={{ position: "relative", overflow: "hidden" }}>
-      <CardScene gradient={place.sceneGradient} query={place.city + " " + place.country} title={place.title} />
+      <CardScene
+        gradient={place.sceneGradient}
+        query={`${place.title} ${place.city} ${place.country}`}
+        title={place.title}
+      />
       <div style={{ position: "absolute", top: 12, left: 12, background: "rgba(255,255,255,0.92)", backdropFilter: "blur(4px)", padding: "5px 12px", borderRadius: 20, fontSize: 10, fontWeight: 800, letterSpacing: "0.5px", color: "#0f172a", border: "1px solid rgba(255,255,255,0.5)", zIndex: 5, boxShadow: "0 2px 8px rgba(0,0,0,0.05)" }}>
         {place.badge}
       </div>
@@ -298,7 +302,7 @@ export default function Explore() {
 
   return (
     <div style={{ fontFamily: "'Segoe UI', system-ui, sans-serif", background: "#f0eff0", minHeight: "100vh", color: "#1a1a1a", overflowX: "hidden" }}>
-      <SEO 
+      <SEO
         title="Explore Destinations"
         url="/explore"
         description="Discover romantic sunset spots, hidden museums, and the best cafes around the world. Browse travel reels and stories from global explorers."
@@ -307,7 +311,7 @@ export default function Explore() {
       {/* PAGE */}
       <div className="flex flex-col lg:flex-row gap-4 sm:gap-8 px-2 sm:px-4 lg:px-[5%] py-4 lg:py-8 min-h-[calc(100vh-58px)] items-start max-w-[1800px] mx-auto overflow-hidden">
         {/* SIDEBAR */}
-        <aside className="bg-white rounded-2xl p-6 w-full lg:w-[240px] flex-shrink-0 flex flex-col gap-5 h-fit lg:sticky lg:top-4">
+        <aside className="bg-white rounded-2xl p-6 w-full lg:w-[280px] flex-shrink-0 flex flex-col gap-5 h-fit lg:sticky lg:top-4">
           <h1 style={{ fontSize: 20, fontWeight: 900, letterSpacing: "-0.5px", display: "flex", alignItems: "center", justifyContent: "space-between", color: "#0f172a", margin: 0 }}>
             EXPLORE
             <div style={{ width: 32, height: 32, borderRadius: 10, background: "#f8fafc", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: "1px solid #f1f5f9" }}>
@@ -385,7 +389,12 @@ export default function Explore() {
         </aside>
 
         {/* MAIN SECTION */}
-        <main style={{ flex: 1, minWidth: 0 }} className="h-auto lg:h-[calc(100vh-120px)] w-full max-w-full overflow-hidden">
+        <main style={{
+          flex: 1,
+          minWidth: 0,
+          maxWidth: "1000px",
+          margin: "0 auto",
+        }} className="h-auto lg:h-[calc(100vh-120px)] w-full max-w-full overflow-hidden">
           {activeTab === "discovery" && (
             <div className="bg-white/60 backdrop-blur-xl rounded-[20px] sm:rounded-[40px] border border-white shadow-xl h-full flex flex-col overflow-hidden">
               <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
@@ -408,7 +417,7 @@ export default function Explore() {
 
                 {/* INTERNAL SCROLLABLE CONTENT */}
                 <div className="flex-1 overflow-y-auto no-scrollbar p-8 pt-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                     {filtered.map(place => (
                       <PlaceCard
                         key={place.id}
