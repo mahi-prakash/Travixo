@@ -17,10 +17,10 @@ const groqKeys = [
 ].filter(k => k && !k.includes('YOUR_GROQ_KEY'));
 
 const mistralKeys = [
-  process.env.MISTRAL_API_KEY_1,
-  process.env.MISTRAL_API_KEY_2,
-  process.env.MISTRAL_API_KEY_3,
-  process.env.MISTRAL_API_KEY_4,
+  //process.env.MISTRAL_API_KEY_1,
+  //process.env.MISTRAL_API_KEY_2,
+  //process.env.MISTRAL_API_KEY_3,
+  //process.env.MISTRAL_API_KEY_4,
 ].filter(k => k && !k.includes('YOUR_MISTRAL_KEY'));
 
 const groqClients = groqKeys.map(k => ({ client: new Groq({ apiKey: k }), key: k }));
@@ -64,7 +64,7 @@ async function callGroq(messages) {
       const response = await client.chat.completions.create({
         model: 'llama-3.1-8b-instant',
         messages,
-        max_tokens: 4000,
+        max_tokens: 2500,
         temperature: 0.2,
       });
       return response.choices[0].message.content;

@@ -794,12 +794,18 @@ export default function Chat() {
         // 🔍 RECOVERY & CLEANUP LOGIC
         if (from === "bot") {
           try {
-            const raw = text.match(/\[ITINERARY\]([\s\S]*?)\[\/ITINERARY\]/i)?.[1] ||
+            let raw = text.match(/\[ITINERARY\]([\s\S]*?)\[\/ITINERARY\]/i)?.[1] ||
               text.match(/\{[\s\S]*"days"[\s\S]*\}/i)?.[0];
 
             if (raw) {
+              raw = raw.replace(/```(?:json)?\s*([\s\S]*?)\s*```/gi, '$1').trim();
+              const fb = raw.indexOf('{');
+              const lb = raw.lastIndexOf('}');
+              if (fb !== -1 && lb !== -1 && lb > fb) {
+                raw = raw.slice(fb, lb + 1).replace(/,\s*([\]}])/g, '$1');
+              }
               const parsed = JSON.parse(raw);
-              if (parsed.days) {
+              if (parsed && parsed.days) {
                 recoveredItinerary = parsed;
                 hadItinerary = true;
               }
@@ -808,6 +814,7 @@ export default function Chat() {
 
           text = text
             .replace(/\[ITINERARY\][\s\S]*?\[\/ITINERARY\]/gi, "")
+            .replace(/```(?:json)?[\s\S]*?```/gi, "")
             .replace(/\[[\w\s]+Itinerary\][\s\S]*?(\{[\s\S]*\})/gi, "")
             .replace(/\{[\s\S]*"days"[\s\S]*\}/gi, "")
             .trim();
@@ -1146,24 +1153,33 @@ export default function Chat() {
         const itinMatch = reply.match(/\[ITINERARY\]([\s\S]*?)\[\/ITINERARY\]/i);
 
         if (itinMatch) {
-          let jsonString = itinMatch[1].replace(/,\s*([\]}])/g, '$1');
+          let jsonString = itinMatch[1].replace(/```(?:json)?\s*([\s\S]*?)\s*```/gi, '$1').trim();
+          const f = jsonString.indexOf('{');
+          const l = jsonString.lastIndexOf('}');
+          if (f !== -1 && l !== -1 && l > f) {
+            jsonString = jsonString.slice(f, l + 1);
+          }
+          jsonString = jsonString.replace(/,\s*([\]}])/g, '$1');
           const raw = JSON.parse(jsonString);
-          if (raw.days) {
+          if (raw && raw.days) {
             parsedItinerary = await enhanceItineraryWithImages(raw);
           }
-          cleanReply = reply.replace(/\[ITINERARY\][\s\S]*?\[\/ITINERARY\]/gi, "").trim();
+          cleanReply = reply.replace(/\[ITINERARY\][\s\S]*?\[\/ITINERARY\]/gi, "").replace(/```(?:json)?[\s\S]*?```/gi, "").trim();
         }
         else {
           // Fallback legacy greedy parser for full itineraries if tags are missing
-          const first = reply.indexOf("{");
-          const last = reply.lastIndexOf("}");
-          if (first !== -1 && last !== -1) {
-            let jsonString = reply.slice(first, last + 1).replace(/,\s*([\]}])/g, '$1');
-            const raw = JSON.parse(jsonString);
-            if (raw.days) {
-              parsedItinerary = await enhanceItineraryWithImages(raw);
-              cleanReply = reply.replace(reply.slice(first, last + 1), "").trim();
-            }
+          let noBlocks = reply.replace(/```(?:json)?\s*([\s\S]*?)\s*```/gi, '$1').trim();
+          const first = noBlocks.indexOf("{");
+          const last = noBlocks.lastIndexOf("}");
+          if (first !== -1 && last !== -1 && last > first) {
+            let jsonString = noBlocks.slice(first, last + 1).replace(/,\s*([\]}])/g, '$1');
+            try {
+              const raw = JSON.parse(jsonString);
+              if (raw && raw.days) {
+                parsedItinerary = await enhanceItineraryWithImages(raw);
+                cleanReply = reply.replace(/```(?:json)?[\s\S]*?```/gi, "").replace(/\{[\s\S]*"days"[\s\S]*\}/gi, "").trim();
+              }
+            } catch (e) {}
           }
         }
       } catch (err) {
@@ -1394,7 +1410,7 @@ export default function Chat() {
   // ── Derived values for panels ──────────────────────────────────────────────
   const activeItinerary = getItinerary();
   const activeItineraryToRender = activePlanView === "ai"
-    ? (activeItinerary?.ai_locked_copy || activeItinerary)
+    ? ((aiItineraryCache || {})[activeTripId] || activeItinerary?.ai_locked_copy || activeItinerary)
     : activeItinerary;
 
   const messages = getMessages();
@@ -2056,7 +2072,7 @@ export default function Chat() {
 
                     {/* Itinerary cards */}
                     <div className="rounded-3xl bg-white shadow-2xl px-6 py-6 space-y-4 max-h-[48vh] overflow-y-auto no-scrollbar mb-4">
-                      {!activeItinerary ? (
+                      {!activeItineraryToRender || itineraryDays.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-12 text-center">
                           <Sparkles className="text-sky-300 w-8 h-8 mb-3" />
                           <p className="text-slate-400 text-sm font-medium">

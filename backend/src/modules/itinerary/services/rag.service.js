@@ -129,7 +129,9 @@ const fetchFullDestinationContext = async (destination, origin, arrivalStation, 
 
   logger.info(`✅ RAG: Successfully aggregated ${contextBlocks.length} data sources for "${destination}"`);
   
-  return contextBlocks.join('\n\n');
+  const combinedContext = contextBlocks.join('\n\n');
+  // 🛡️ Guardrail: Clamp total RAG string to ~3800 characters (~950 tokens) to guarantee zero 413 token quota overflows on Groq free tier
+  return combinedContext.length > 3800 ? combinedContext.slice(0, 3800) + '\n...[Context Truncated for Token Quota Efficiency]' : combinedContext;
 };
 
 module.exports = {

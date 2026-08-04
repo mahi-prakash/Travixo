@@ -86,7 +86,13 @@ class ItineraryService {
     const itineraryMatch = aiReply.match(/\[ITINERARY\]([\s\S]*?)\[\/ITINERARY\]/i);
     if (itineraryMatch) {
       try {
-        const itineraryJson = JSON.parse(itineraryMatch[1]);
+        let cleanedJsonStr = itineraryMatch[1].replace(/```(?:json)?\s*([\s\S]*?)\s*```/gi, '$1').trim();
+        const firstBrace = cleanedJsonStr.indexOf('{');
+        const lastBrace = cleanedJsonStr.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+          cleanedJsonStr = cleanedJsonStr.slice(firstBrace, lastBrace + 1).replace(/,\s*([\]}])/g, '$1');
+        }
+        const itineraryJson = JSON.parse(cleanedJsonStr);
         const rawDays = itineraryJson.days || {};
         const isArray = Array.isArray(rawDays);
         const dayEntries = isArray ? rawDays.map((d, i) => [i, d]) : Object.entries(rawDays);
