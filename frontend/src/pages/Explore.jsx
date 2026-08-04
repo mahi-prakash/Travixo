@@ -162,7 +162,7 @@ const UnsplashImage = ({ query, alt, style }) => {
 
 // ─── CARD SCENE ──────────────────────────────────────────────────────────────
 const CardScene = ({ gradient, height = 150, query, title }) => (
-  <div style={{ background: gradient, width: "100%", height, position: "relative", overflow: "hidden" }}>
+  <div style={{ width: "100%", height, position: "relative", overflow: "hidden" }}>
     <UnsplashImage query={query || title} alt={title} style={{ width: "100%", height: "100%", objectFit: "cover", position: "absolute", inset: 0, zIndex: 1 }} />
   </div>
 );
@@ -417,7 +417,7 @@ export default function Explore() {
 
                 {/* INTERNAL SCROLLABLE CONTENT */}
                 <div className="flex-1 overflow-y-auto no-scrollbar p-8 pt-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-12 ">
                     {filtered.map(place => (
                       <PlaceCard
                         key={place.id}

@@ -2,7 +2,7 @@ import React from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Send, Edit3 } from "lucide-react";
-import CircleLogo from "../../../pages/CircleLogo.png";
+const CircleLogo = "/CircleLogo.png";
 
 export default function ChatPanel({
   tripMeta,
