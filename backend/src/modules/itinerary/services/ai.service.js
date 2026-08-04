@@ -1,5 +1,4 @@
 const Groq = require('groq-sdk');
-const { Mistral } = require('@mistralai/mistralai');
 const logger = require('../../../utils/logger');
 const { sendAlert } = require('../../../utils/notifier');
 
@@ -9,22 +8,9 @@ const groqKeys = [
   process.env.GROQ_API_KEY_1,
   process.env.GROQ_API_KEY_2,
   process.env.GROQ_API_KEY_3,
-  // process.env.GROQ_API_KEY_4,
-  // process.env.GROQ_API_KEY_5,
-  // process.env.GROQ_API_KEY_6,
-  // process.env.GROQ_API_KEY_7,
-  // process.env.GROQ_API_KEY_8,
 ].filter(k => k && !k.includes('YOUR_GROQ_KEY'));
 
-const mistralKeys = [
-  //process.env.MISTRAL_API_KEY_1,
-  //process.env.MISTRAL_API_KEY_2,
-  //process.env.MISTRAL_API_KEY_3,
-  //process.env.MISTRAL_API_KEY_4,
-].filter(k => k && !k.includes('YOUR_MISTRAL_KEY'));
-
 const groqClients = groqKeys.map(k => ({ client: new Groq({ apiKey: k }), key: k }));
-const mistralClients = mistralKeys.map(k => ({ client: new Mistral({ apiKey: k }), key: k }));
 
 const blacklist = new Map(); // key -> expiry timestamp
 
@@ -100,45 +86,6 @@ async function callGroq(messages) {
   throw new Error('ALL_GROQ_EXHAUSTED');
 }
 
-async function callMistral(messages) {
-  const available = mistralClients.filter(c => !isBlacklisted(c.key));
-  if (available.length === 0) throw new Error('ALL_MISTRAL_EXHAUSTED');
-
-  for (let i = 0; i < available.length; i++) {
-    const { client, key } = available[i];
-    const keyLabel = `Mistral Key #${mistralClients.findIndex(c => c.key === key) + 1}`;
-
-    try {
-      const response = await client.chat.complete({
-        model: process.env.MODEL_NAME || 'mistral-small-latest',
-        messages,
-        maxTokens: 3000,
-        temperature: 0.2,
-      });
-      return response.choices[0].message.content;
-
-    } catch (err) {
-      const msg = err.message || '';
-      const status = err.status || err.statusCode;
-
-      if (status === 429) {
-        const retryMs = parseRetryAfterMs(msg);
-        blacklistKey(key, retryMs);
-        logger.warn(`⚠️ ${keyLabel} Rate Limited — skipping for ${Math.ceil(retryMs / 1000)}s`);
-        continue;
-      } else if (status === 401) {
-        blacklistKey(key, 24 * 60 * 60 * 1000);
-        logger.error(`❌ ${keyLabel} is INVALID — removed from pool`);
-        continue;
-      } else {
-        logger.warn(`⚠️ ${keyLabel} error: ${msg.slice(0, 100)}`);
-        continue;
-      }
-    }
-  }
-  throw new Error('ALL_MISTRAL_EXHAUSTED');
-}
-
 // ─── AI Response Cache ────────────────────────────────────────────────────────
 
 const aiResponseCache = new Map();
@@ -157,28 +104,14 @@ const generateAiResponse = async (messages) => {
     }
   }
 
-  try {
-    const response = await callGroq(messages);
+  const response = await callGroq(messages);
 
-    aiResponseCache.set(cacheKey, {
-      data: response,
-      expiry: Date.now() + CACHE_TTL_MS
-    });
+  aiResponseCache.set(cacheKey, {
+    data: response,
+    expiry: Date.now() + CACHE_TTL_MS
+  });
 
-    return response;
-  } catch (err) {
-    if (err.message === 'ALL_GROQ_EXHAUSTED') {
-      logger.warn('⚠️ All Groq keys exhausted — falling back to Mistral');
-      const fallbackResponse = await callMistral(messages);
-
-      aiResponseCache.set(cacheKey, {
-        data: fallbackResponse,
-        expiry: Date.now() + CACHE_TTL_MS
-      });
-      return fallbackResponse;
-    }
-    throw err;
-  }
+  return response;
 };
 
 module.exports = {
