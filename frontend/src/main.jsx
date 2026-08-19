@@ -8,6 +8,8 @@ import { UserProvider } from "./context/UserContext";
 import { TripProvider } from "./context/TripContext";
 
 import { HelmetProvider } from "react-helmet-async";
+import { SocketProvider } from "./context/SocketContext";
+
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
@@ -15,7 +17,9 @@ ReactDOM.createRoot(document.getElementById("root")).render(
       <BrowserRouter>
         <UserProvider>
           <TripProvider>
-            <App />
+            <SocketProvider>
+              <App />
+            </SocketProvider>
           </TripProvider>
         </UserProvider>
       </BrowserRouter>

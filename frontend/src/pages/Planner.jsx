@@ -4,7 +4,9 @@ import { motion } from 'framer-motion';
 import { DragDropContext } from '@hello-pangea/dnd';
 import { useJsApiLoader } from '@react-google-maps/api';
 import { useTrip } from '../context/TripContext';
+import { useUser } from '../context/UserContext';
 import SEO from '../components/common/SEO';
+import { FloatingChat } from '../features/chat/components/FloatingChat';
 
 // Bounded Domain Modules & Hooks
 import { LIBRARIES } from '../features/planner/utils/plannerHelpers';
@@ -212,6 +214,14 @@ export default function Planner() {
         days={itinerary.days}
         addToDay={itinerary.addToDay}
       />
+
+      {/* --- FLOATING REAL-TIME CHAT --- */}
+      <FloatingChat
+        tripId={activeTripId || "default_trip"}
+        currentUser={user?.email || "Guest"}
+      />
+
     </div>
   );
 }
+

@@ -5,6 +5,7 @@ const cors = require('cors');
 const logger = require('./utils/logger');
 const errorMiddleware = require('./middlewares/error.middleware');
 const { globalLimiter } = require('./middlewares/rateLimit.middleware');
+const { Server } = require('socket.io');
 
 // Domain Bounded Context Routes
 const itineraryRoutes = require('./modules/itinerary/itinerary.routes');
@@ -57,10 +58,30 @@ app.use(errorMiddleware);
 // ─── START SERVER ────────────────────────────────────────────────────────────
 
 const server = app.listen(PORT, () => {
-    logger.info(`✅ Server v${VERSION} started on port ${PORT}`);
+    logger.info(`Server v${VERSION} started on port ${PORT}`);
 });
 
-// Handle graceful shutdown silently in development
-process.on('SIGTERM', () => {
-    server.close();
+const io = new Server(server, {
+    cors: {
+        origin: "*",
+        methods: ["GET", "POST"]
+    }
 });
+
+io.on("connection", (socket) => {
+    logger.info(`New client connected: ${socket.id}`);
+
+    socket.on("join_trip", (tripId) => {
+        socket.join(tripId);
+        logger.info(`Socket ${socket.id} joined trip: ${tripId}`);
+    });
+
+    socket.on("send_message", (data) => {
+        io.to(data.tripId).emit("receive_message", data);
+    });
+
+    socket.on("disconnect", () => {
+        logger.info(`Client disconnected: ${socket.id}`);
+    });
+});
+
