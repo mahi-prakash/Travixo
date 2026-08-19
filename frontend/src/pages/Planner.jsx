@@ -34,6 +34,8 @@ export default function Planner() {
     updateTripItinerary
   } = useTrip();
 
+  const { user } = useUser();
+
   // Google Maps Load
   const { isLoaded, loadError } = useJsApiLoader({
     id: 'google-map-script',
