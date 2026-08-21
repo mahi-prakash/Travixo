@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { DragDropContext } from '@hello-pangea/dnd';
 import { useJsApiLoader } from '@react-google-maps/api';
@@ -31,8 +31,17 @@ export default function Planner() {
     aiItineraryCache,
     saveItineraryToCache,
     loading,
-    updateTripItinerary
+    updateTripItinerary,
+    joinTrip
   } = useTrip();
+
+  const { tripId: urlTripId } = useParams();
+
+  useEffect(() => {
+    if (urlTripId && urlTripId !== activeTripId) {
+      joinTrip(urlTripId);
+    }
+  }, [urlTripId, activeTripId, joinTrip]);
 
   const { user } = useUser();
 
@@ -134,6 +143,23 @@ export default function Planner() {
             displayDayOrder={itinerary.displayDayOrder}
             displayDays={itinerary.displayDays}
           />
+
+          {/* COPY INVITE LINK BUTTON */}
+          {activeTripId && (
+            <div className="px-4 py-2 bg-slate-50 border-b flex justify-between items-center">
+              <span className="text-sm text-slate-600 font-medium">Collaborate on this trip</span>
+              <button 
+                onClick={() => {
+                  const url = `${window.location.origin}/planner/${activeTripId}`;
+                  navigator.clipboard.writeText(url);
+                  alert("Invite link copied to clipboard!");
+                }}
+                className="text-xs bg-sky-100 text-sky-700 px-3 py-1.5 rounded font-bold hover:bg-sky-200 transition-colors"
+              >
+                Copy Invite Link
+              </button>
+            </div>
+          )}
           <DayScheduleList
             isGenerating={isGenerating}
             planMode={itinerary.planMode}

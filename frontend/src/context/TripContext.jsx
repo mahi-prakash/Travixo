@@ -86,6 +86,26 @@ export const TripProvider = ({ children }) => {
     setLoading(false);
   };
 
+  // 🤝 Join a shared trip
+  const joinTrip = async (tripId) => {
+    if (!user) return;
+    try {
+      const { error } = await supabase
+        .from('trip_members')
+        .insert([{ trip_id: tripId, user_id: user.id, role: 'editor' }]);
+      
+      // If error is code '23505', it means they are already a member, which is fine!
+      if (error && error.code !== '23505') {
+        console.error("Error joining trip:", error);
+      } else {
+        await fetchTrips(); // Refresh trips to load the newly joined one
+        setActiveTripId(tripId);
+      }
+    } catch (err) {
+      console.error("Failed to join trip:", err);
+    }
+  };
+
   const enhanceItineraryWithImages = async (itineraryData) => {
     if (!itineraryData?.days) return itineraryData;
 
@@ -266,7 +286,8 @@ export const TripProvider = ({ children }) => {
         updateAiItinerary: (id, itin) => updateTrip(id, { ai_itinerary: itin }),
         isGenerating,
         setIsGenerating,
-        enhanceItineraryWithImages
+        enhanceItineraryWithImages,
+        joinTrip
       }}
     >
       {children}
