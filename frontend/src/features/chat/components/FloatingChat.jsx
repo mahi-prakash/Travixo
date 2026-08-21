@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useSocket } from '../../../context/SocketContext';
 
-export const FloatingChat = ({ tripId, currentUser }) => {
+export const FloatingChat = ({ tripId, currentUser, isEmbedded = false }) => {
     const socket = useSocket();
     const [messages, setMessages] = useState([]);
     const [inputValue, setInputValue] = useState("");
@@ -39,6 +39,37 @@ export const FloatingChat = ({ tripId, currentUser }) => {
     };
 
     // --- Basic UI ---
+    if (isEmbedded) {
+        return (
+            <div className="bg-white flex flex-col h-full w-full rounded-b-2xl overflow-hidden">
+                {/* Messages Area */}
+                <div className="flex-1 p-4 overflow-y-auto bg-slate-50 flex flex-col gap-3">
+                    {messages.map((msg, index) => (
+                        <div
+                            key={index}
+                            className={`p-3 rounded-2xl max-w-[85%] shadow-sm ${msg.sender === currentUser ? 'bg-sky-500 text-white self-end rounded-tr-sm' : 'bg-white border border-slate-100 text-slate-800 self-start rounded-tl-sm'}`}
+                        >
+                            <span className={`text-[10px] font-bold block mb-1 uppercase tracking-wider ${msg.sender === currentUser ? 'text-sky-100' : 'text-slate-400'}`}>{msg.sender}</span>
+                            <p className="text-sm">{msg.text}</p>
+                        </div>
+                    ))}
+                </div>
+
+                {/* Input Area */}
+                <form onSubmit={handleSendMessage} className="p-4 border-t border-slate-100 flex gap-3 bg-white">
+                    <input
+                        type="text"
+                        value={inputValue}
+                        onChange={(e) => setInputValue(e.target.value)}
+                        className="flex-1 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 transition-all bg-slate-50"
+                        placeholder="Type a message..."
+                    />
+                    <button type="submit" className="bg-sky-500 text-white px-6 py-2.5 rounded-xl text-sm font-bold shadow-sm shadow-sky-500/30 hover:bg-sky-600 transition-colors">Send</button>
+                </form>
+            </div>
+        );
+    }
+
     return (
         <div className="fixed bottom-4 right-4 z-50">
             {!isOpen ? (

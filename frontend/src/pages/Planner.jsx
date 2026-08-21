@@ -7,6 +7,7 @@ import { useTrip } from '../context/TripContext';
 import { useUser } from '../context/UserContext';
 import SEO from '../components/common/SEO';
 import { FloatingChat } from '../features/chat/components/FloatingChat';
+import { MapIcon, UserPlus, MessageSquare } from 'lucide-react';
 
 // Bounded Domain Modules & Hooks
 import { LIBRARIES } from '../features/planner/utils/plannerHelpers';
@@ -51,6 +52,8 @@ export default function Planner() {
     googleMapsApiKey: GOOGLE_MAPS_API_KEY,
     libraries: LIBRARIES
   });
+
+  const [activeCenterView, setActiveCenterView] = useState('map'); // 'map' or 'chat'
 
   const [mapAuthFailed, setMapAuthFailed] = useState(false);
   useEffect(() => {
@@ -143,23 +146,6 @@ export default function Planner() {
             displayDayOrder={itinerary.displayDayOrder}
             displayDays={itinerary.displayDays}
           />
-
-          {/* COPY INVITE LINK BUTTON */}
-          {activeTripId && (
-            <div className="px-4 py-2 bg-slate-50 border-b flex justify-between items-center">
-              <span className="text-sm text-slate-600 font-medium">Collaborate on this trip</span>
-              <button 
-                onClick={() => {
-                  const url = `${window.location.origin}/planner/${activeTripId}`;
-                  navigator.clipboard.writeText(url);
-                  alert("Invite link copied to clipboard!");
-                }}
-                className="text-xs bg-sky-100 text-sky-700 px-3 py-1.5 rounded font-bold hover:bg-sky-200 transition-colors"
-              >
-                Copy Invite Link
-              </button>
-            </div>
-          )}
           <DayScheduleList
             isGenerating={isGenerating}
             planMode={itinerary.planMode}
@@ -182,31 +168,73 @@ export default function Planner() {
         </motion.div>
 
         {/* --- CENTER CARD: DYNAMIC EXPERIENCE VIEW --- */}
-        <PlannerMapView
-          selectedPlace={itinerary.selectedPlace}
-          setSelectedPlace={itinerary.setSelectedPlace}
-          map={logisticsState.map}
-          setMap={logisticsState.setMap}
-          isLoaded={isLoaded}
-          mapAuthFailed={mapAuthFailed}
-          loadError={loadError}
-          mapMarkers={itinerary.mapMarkers}
-          destinationCoords={logisticsState.destinationCoords}
-          directions={logisticsState.directions}
-          mapPolylines={itinerary.mapPolylines}
-          selectedDayId={itinerary.selectedDayId}
-          baseCampHotel={logisticsState.baseCampHotel}
-          baseCampStation={logisticsState.baseCampStation}
-          baseCampMode={logisticsState.baseCampMode}
-          setBaseCampMode={logisticsState.setBaseCampMode}
-          baseCampSearch={logisticsState.baseCampSearch}
-          setBaseCampSearch={logisticsState.setBaseCampSearch}
-          handleBaseCampLoad={logisticsState.handleBaseCampLoad}
-          handleBaseCampPlaceChanged={logisticsState.handleBaseCampPlaceChanged}
-          activeTrip={activeTrip}
-          displayDayOrder={itinerary.displayDayOrder}
-          displayDays={itinerary.displayDays}
-        />
+        <div className="bg-white/90 backdrop-blur-xl rounded-2xl shadow-2xl flex flex-col h-[500px] lg:h-full relative z-10 border border-slate-200/50 overflow-hidden">
+          {/* Top Navigation Bar */}
+          <div className="flex items-center justify-between p-3 border-b border-slate-100 bg-slate-50/80 backdrop-blur">
+            <div className="flex bg-slate-200/50 p-1 rounded-xl">
+              <button
+                onClick={() => setActiveCenterView('map')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeCenterView === 'map' ? 'bg-white text-sky-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                <MapIcon size={16} /> Map
+              </button>
+              <button
+                onClick={() => setActiveCenterView('chat')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeCenterView === 'chat' ? 'bg-white text-sky-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                <MessageSquare size={16} /> Chat
+              </button>
+            </div>
+
+            <button
+              onClick={() => {
+                const url = `${window.location.origin}/planner/${activeTripId || ''}`;
+                navigator.clipboard.writeText(url);
+                alert("Invite link copied to clipboard!");
+              }}
+              className="flex items-center gap-2 px-4 py-2 bg-sky-100 text-sky-700 rounded-lg text-sm font-bold hover:bg-sky-200 transition-colors"
+            >
+              <UserPlus size={16} /> Invite Friends
+            </button>
+          </div>
+
+          {/* Dynamic Content Area */}
+          <div className="flex-1 relative min-h-0">
+            {activeCenterView === 'map' ? (
+              <PlannerMapView
+                selectedPlace={itinerary.selectedPlace}
+                setSelectedPlace={itinerary.setSelectedPlace}
+                map={logisticsState.map}
+                setMap={logisticsState.setMap}
+                isLoaded={isLoaded}
+                mapAuthFailed={mapAuthFailed}
+                loadError={loadError}
+                mapMarkers={itinerary.mapMarkers}
+                destinationCoords={logisticsState.destinationCoords}
+                directions={logisticsState.directions}
+                mapPolylines={itinerary.mapPolylines}
+                selectedDayId={itinerary.selectedDayId}
+                baseCampHotel={logisticsState.baseCampHotel}
+                baseCampStation={logisticsState.baseCampStation}
+                baseCampMode={logisticsState.baseCampMode}
+                setBaseCampMode={logisticsState.setBaseCampMode}
+                baseCampSearch={logisticsState.baseCampSearch}
+                setBaseCampSearch={logisticsState.setBaseCampSearch}
+                handleBaseCampLoad={logisticsState.handleBaseCampLoad}
+                handleBaseCampPlaceChanged={logisticsState.handleBaseCampPlaceChanged}
+                activeTrip={activeTrip}
+                displayDayOrder={itinerary.displayDayOrder}
+                displayDays={itinerary.displayDays}
+              />
+            ) : (
+              <FloatingChat 
+                tripId={activeTripId || "default_trip"} 
+                currentUser={user?.email || "Guest"} 
+                isEmbedded={true}
+              />
+            )}
+          </div>
+        </div>
 
         {/* --- RIGHT CARD: EXPLORE & DRAFTS POCKET --- */}
         <PlacePoolSidebar
@@ -234,7 +262,8 @@ export default function Planner() {
         />
       </DragDropContext>
 
-      {/* --- ADD PLACE MODAL --- */}
+
+
       <AddPlaceModal
         addingPlace={itinerary.addingPlace}
         setAddingPlace={itinerary.setAddingPlace}
@@ -242,13 +271,6 @@ export default function Planner() {
         days={itinerary.days}
         addToDay={itinerary.addToDay}
       />
-
-      {/* --- FLOATING REAL-TIME CHAT --- */}
-      <FloatingChat
-        tripId={activeTripId || "default_trip"}
-        currentUser={user?.email || "Guest"}
-      />
-
     </div>
   );
 }
